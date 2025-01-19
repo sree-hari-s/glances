@@ -1,86 +1,133 @@
 <template>
-    <section id="containers-plugin" class="plugin" v-if="containers.length">
+    <section class="plugin" id="containers" v-if="containers.length">
         <span class="title">CONTAINERS</span>
-        {{ containers.length }} sorted by {{ sorter.getColumnLabel(sorter.column) }}
-        <div class="table">
-            <div class="table-row">
-                <div class="table-cell text-left" v-show="showEngine">Engine</div>
-                <div class="table-cell text-left" v-show="showPod">Pod</div>
-                <div
-                    class="table-cell text-left"
-                    :class="['sortable', sorter.column === 'name' && 'sort']"
-                    @click="args.sort_processes_key = 'name'"
-                >
-                    Name
-                </div>
-                <div class="table-cell">Status</div>
-                <div class="table-cell">Uptime</div>
-                <div
-                    class="table-cell"
-                    :class="['sortable', sorter.column === 'cpu_percent' && 'sort']"
-                    @click="args.sort_processes_key = 'cpu_percent'"
-                >
-                    CPU%
-                </div>
-                <div
-                    class="table-cell"
-                    :class="['sortable', sorter.column === 'memory_percent' && 'sort']"
-                    @click="args.sort_processes_key = 'memory_percent'"
-                >
-                    MEM
-                </div>
-                <div class="table-cell text-left">/MAX</div>
-                <div class="table-cell">IOR/s</div>
-                <div class="table-cell">IOW/s</div>
-                <div class="table-cell">RX/s</div>
-                <div class="table-cell">TX/s</div>
-                <div class="table-cell text-left">Command</div>
-            </div>
-            <div
-                class="table-row"
-                v-for="(container, containerId) in containers"
-                :key="containerId"
-            >
-                <div class="table-cell text-left" v-show="showEngine">{{ container.engine }}</div>
-                <div class="table-cell text-left" v-show="showPod">{{ container.pod_id || '-' }}</div>
-                <div class="table-cell text-left">{{ container.name }}</div>
-                <div class="table-cell" :class="container.status == 'Paused' ? 'careful' : 'ok'">
-                    {{ container.status }}
-                </div>
-                <div class="table-cell">
-                    {{ container.uptime }}
-                </div>
-                <div class="table-cell">
-                    {{ $filters.number(container.cpu_percent, 1) }}
-                </div>
-                <div class="table-cell">
-                    {{ $filters.bytes(container.memory_usage) }}
-                </div>
-                <div class="table-cell text-left">
-                    /{{ $filters.bytes(container.limit) }}
-                </div>
-                <div class="table-cell">
-                    {{ $filters.bytes(container.io_rx) }}
-                </div>
-                <div class="table-cell">
-                    {{ $filters.bytes(container.io_wx) }}
-                </div>
-                <div class="table-cell">
-                    {{ $filters.bits(container.network_rx) }}
-                </div>
-                <div class="table-cell">
-                    {{ $filters.bits(container.network_tx) }}
-                </div>
-                <div class="table-cell text-left">
-                    {{ container.command }}
-                </div>
-            </div>
+        <span v-show="containers.length > 1">{{ containers.length }} sorted by {{
+            sorter.getColumnLabel(sorter.column)
+            }}</span>
+        <div class="table-responsive d-md-none">
+            <table class="table table-sm table-borderless table-striped table-hover">
+                <thead>
+                    <tr>
+                        <td scope="col" v-show="showPod">Pod</td>
+                        <td scope="col" :class="['sortable', sorter.column === 'name' && 'sort']"
+                            @click="args.sort_processes_key = 'name'" v-show="!getDisableStats().includes('name')">
+                            Name
+                        </td>
+                        <td scope="col" v-show="!getDisableStats().includes('status')">Status</td>
+                        <td scope="col" :class="['sortable', sorter.column === 'cpu_percent' && 'sort']"
+                            @click="args.sort_processes_key = 'cpu_percent'"
+                            v-show="!getDisableStats().includes('cpu')">
+                            CPU%
+                        </td>
+                        <td scope="col" :class="['sortable', sorter.column === 'memory_percent' && 'sort']"
+                            @click="args.sort_processes_key = 'memory_percent'"
+                            v-show="!getDisableStats().includes('mem')">
+                            MEM
+                        </td>
+                        <td scope="col" v-show="!getDisableStats().includes('mem')">MAX</td>
+                        <td scope="col" v-show="!getDisableStats().includes('command')">Command</td>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr v-for="(container, containerId) in containers" :key="containerId">
+                        <td scope="row" v-show="showPod">{{ container.pod_id || '-' }}</td>
+                        <td scope="row" v-show="!getDisableStats().includes('name')">{{ container.name }}</td>
+                        <td scope="row" :class="container.status == 'Paused' ? 'careful' : 'ok'"
+                            v-show="!getDisableStats().includes('status')">
+                            {{ container.status }}
+                        </td>
+                        <td scope="row" v-show="!getDisableStats().includes('cpu')">
+                            {{ $filters.number(container.cpu_percent, 1) }}
+                        </td>
+                        <td scope="row" v-show="!getDisableStats().includes('mem')">
+                            {{ $filters.bytes(container.memory_usage) }}
+                        </td>
+                        <td scope="row" v-show="!getDisableStats().includes('mem')">
+                            {{ $filters.bytes(container.limit) }}
+                        </td>
+                        <td scope="row" class="text-truncate" v-show="!getDisableStats().includes('command')">
+                            {{ container.command }}
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <div class="table-responsive d-none d-md-block">
+            <table class="table table-sm table-borderless table-striped table-hover">
+                <thead>
+                    <tr>
+                        <td scope="col" v-show="showEngine">Engine</td>
+                        <td scope="col" v-show="showPod">Pod</td>
+                        <td scope="col" :class="['sortable', sorter.column === 'name' && 'sort']"
+                            @click="args.sort_processes_key = 'name'" v-show="!getDisableStats().includes('name')">
+                            Name
+                        </td>
+                        <td scope="col" v-show="!getDisableStats().includes('status')">Status</td>
+                        <td scope="col" v-show="!getDisableStats().includes('uptime')">Uptime</td>
+                        <td scope="col" :class="['sortable', sorter.column === 'cpu_percent' && 'sort']"
+                            @click="args.sort_processes_key = 'cpu_percent'"
+                            v-show="!getDisableStats().includes('cpu')">
+                            CPU%
+                        </td>
+                        <td scope="col" :class="['sortable', sorter.column === 'memory_percent' && 'sort']"
+                            @click="args.sort_processes_key = 'memory_percent'"
+                            v-show="!getDisableStats().includes('mem')">
+                            MEM
+                        </td>
+                        <td scope="col" v-show="!getDisableStats().includes('mem')">MAX</td>
+                        <td scope="col" v-show="!getDisableStats().includes('diskio')">IORps</td>
+                        <td scope="col" v-show="!getDisableStats().includes('diskio')">IOWps</td>
+                        <td scope="col" v-show="!getDisableStats().includes('networkio')">RXps</td>
+                        <td scope="col" v-show="!getDisableStats().includes('networkio')">TXps</td>
+                        <td scope="col" v-show="!getDisableStats().includes('command')">Command</td>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr v-for="(container, containerId) in containers" :key="containerId">
+                        <td scope="row" v-show="showEngine">{{ container.engine }}</td>
+                        <td scope="row" v-show="showPod">{{ container.pod_id || '-' }}</td>
+                        <td scope="row" v-show="!getDisableStats().includes('name')">{{ container.name }}</td>
+                        <td scope="row" :class="container.status == 'Paused' ? 'careful' : 'ok'"
+                            v-show="!getDisableStats().includes('status')">
+                            {{ container.status }}
+                        </td>
+                        <td scope="row" v-show="!getDisableStats().includes('uptime')">
+                            {{ container.uptime }}
+                        </td>
+                        <td scope="row" v-show="!getDisableStats().includes('cpu')">
+                            {{ $filters.number(container.cpu_percent, 1) }}
+                        </td>
+                        <td scope="row" v-show="!getDisableStats().includes('mem')">
+                            {{ $filters.bytes(container.memory_usage) }}
+                        </td>
+                        <td scope="row" v-show="!getDisableStats().includes('mem')">
+                            {{ $filters.bytes(container.limit) }}
+                        </td>
+                        <td scope="row" v-show="!getDisableStats().includes('iodisk')">
+                            {{ $filters.bytes(container.io_rx) }}
+                        </td>
+                        <td scope="row" v-show="!getDisableStats().includes('iodisk')">
+                            {{ $filters.bytes(container.io_wx) }}
+                        </td>
+                        <td scope="row" v-show="!getDisableStats().includes('networkio')">
+                            {{ $filters.bits(container.network_rx) }}
+                        </td>
+                        <td scope="row" v-show="!getDisableStats().includes('networkio')">
+                            {{ $filters.bits(container.network_tx) }}
+                        </td>
+                        <td scope="row" class="text-truncate" v-show="!getDisableStats().includes('command')">
+                            {{ container.command }}
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
         </div>
     </section>
 </template>
 
 <script>
 import { orderBy } from 'lodash';
+import { GlancesHelper } from '../services.js';
 import { store } from '../store.js';
 
 export default {
@@ -119,7 +166,7 @@ export default {
                             memory_usage_no_cache = memory_usage_no_cache - containerData.memory.inactive_file;
                         }
                     }
-                
+
                     return {
                         'id': containerData.id,
                         'name': containerData.name,
@@ -127,11 +174,11 @@ export default {
                         'uptime': containerData.uptime,
                         'cpu_percent': containerData.cpu.total,
                         'memory_usage': memory_usage_no_cache,
-                        'limit': containerData.memory.limit != undefined ? containerData.memory.limit : '?',
-                        'io_rx': containerData.io_rx != undefined ? containerData.io_rx : '?',
-                        'io_wx': containerData.io_wx != undefined ? containerData.io_wx : '?',
-                        'network_rx': containerData.network_rx != undefined ? containerData.network_rx : '?',
-                        'network_tx': containerData.network_tx != undefined ? containerData.network_tx : '?',
+                        'limit': containerData.memory.limit != undefined && containerData.memory.limit != NaN ? containerData.memory.limit : '-',
+                        'io_rx': containerData.io_rx != undefined && containerData.io_rx != NaN ? containerData.io_rx : '-',
+                        'io_wx': containerData.io_wx != undefined && containerData.io_wx != NaN ? containerData.io_wx : '-',
+                        'network_rx': containerData.network_rx != undefined && containerData.network_rx != NaN ? containerData.network_rx : '-',
+                        'network_tx': containerData.network_tx != undefined && containerData.network_tx != NaN ? containerData.network_tx : '-',
                         'command': containerData.command,
                         'image': containerData.image,
                         'engine': containerData.engine,
@@ -185,6 +232,11 @@ export default {
                     };
                 }
             }
+        }
+    },
+    methods: {
+        getDisableStats() {
+            return GlancesHelper.getLimit('containers', 'containers_disable_stats') || [];
         }
     }
 };

@@ -1,8 +1,6 @@
 <template>
     <section id="now" class="plugin">
-        <div class="table-row">
-            <div class="table-cell text-left">{{ localDate(date_iso) }}</div>
-        </div>
+        <span>{{ date_custom }}</span>
     </section>
 </template>
 
@@ -14,13 +12,8 @@ export default {
         }
     },
     computed: {
-        date_iso() {
-            return this.data.stats['now']['iso'];
-        }
-    },
-    methods: {
-        localDate(date) {
-            return new Date(date).toLocaleString();
+        date_custom() {
+            return this.data.stats['now']['custom'];
         }
     }
 };

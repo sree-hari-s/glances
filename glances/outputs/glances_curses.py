@@ -14,8 +14,9 @@ import sys
 from glances.events_list import glances_events
 from glances.globals import MACOS, WINDOWS, disable, enable, itervalues, nativestr, u
 from glances.logger import logger
+from glances.outputs.glances_colors import GlancesColors
 from glances.outputs.glances_unicode import unicode_message
-from glances.processes import glances_processes, sort_processes_key_list
+from glances.processes import glances_processes, sort_processes_stats_list
 from glances.timer import Timer
 
 # Import curses library for "normal" operating system
@@ -83,6 +84,7 @@ class _GlancesCurses:
         'T': {'switch': 'network_sum'},
         'u': {'sort_key': 'username'},
         'U': {'switch': 'network_cumul'},
+        'V': {'switch': 'disable_vms'},
         'w': {'handler': '_handle_clean_logs'},
         'W': {'switch': 'disable_wifi'},
         'x': {'handler': '_handle_clean_critical_logs'},
@@ -95,16 +97,16 @@ class _GlancesCurses:
         # 'DOWN' > Down in the server list
     }
 
-    _sort_loop = sort_processes_key_list
+    _sort_loop = sort_processes_stats_list
 
     # Define top menu
     _top = ['quicklook', 'cpu', 'percpu', 'gpu', 'mem', 'memswap', 'load']
     _quicklook_max_width = 58
 
     # Define left sidebar
-    # This default list is also defined in the glances/outputs/static/js/uiconfig.json
-    # file for the web interface
-    # Both can be overwritten by the configuration file ([outputs] left_menu option)
+    # This variable is used in the make webui task in order to generate the
+    # glances/outputs/static/js/uiconfig.json file for the web interface
+    # This lidt can also be overwritten by the configuration file ([outputs] left_menu option)
     _left_sidebar = [
         'network',
         'ports',
@@ -122,8 +124,8 @@ class _GlancesCurses:
     _left_sidebar_min_width = 23
     _left_sidebar_max_width = 34
 
-    # Define right sidebar
-    _right_sidebar = ['containers', 'processcount', 'amps', 'processlist', 'alert']
+    # Define right sidebar in a method because it depends of self.args.programs
+    # See def _right_sidebar method
 
     def __init__(self, config=None, args=None):
         # Init
@@ -162,7 +164,7 @@ class _GlancesCurses:
         self._init_cursor()
 
         # Init the colors
-        self.colors_list = build_colors_list(args)
+        self.colors_list = GlancesColors(args).get()
 
         # Init main window
         self.term_window = self.screen.subwin(0, 0)
@@ -202,6 +204,16 @@ class _GlancesCurses:
             # Set the left sidebar list
             self._left_sidebar = config.get_list_value('outputs', 'left_menu', default=self._left_sidebar)
 
+    def _right_sidebar(self):
+        return [
+            'vms',
+            'containers',
+            'processcount',
+            'amps',
+            'programlist' if self.args.programs else 'processlist',
+            'alert',
+        ]
+
     def _init_history(self):
         """Init the history option."""
 
@@ -233,24 +245,16 @@ class _GlancesCurses:
         # TODO: Check issue #163
         return window.getch()
 
-    def __catch_key(self, return_to_browser=False):
-        # Catch the pressed key
-        self.pressedkey = self.get_key(self.term_window)
-        if self.pressedkey == -1:
-            return -1
+    def catch_actions_from_hotkey(self, hotkey):
+        if self.pressedkey == ord(hotkey) and 'switch' in self._hotkeys[hotkey]:
+            self._handle_switch(hotkey)
+        elif self.pressedkey == ord(hotkey) and 'sort_key' in self._hotkeys[hotkey]:
+            self._handle_sort_key(hotkey)
+        if self.pressedkey == ord(hotkey) and 'handler' in self._hotkeys[hotkey]:
+            action = getattr(self, self._hotkeys[hotkey]['handler'])
+            action()
 
-        # Actions (available in the global hotkey dict)...
-        logger.debug(f"Keypressed (code: {self.pressedkey})")
-        for hotkey in self._hotkeys:
-            if self.pressedkey == ord(hotkey) and 'switch' in self._hotkeys[hotkey]:
-                self._handle_switch(hotkey)
-            elif self.pressedkey == ord(hotkey) and 'sort_key' in self._hotkeys[hotkey]:
-                self._handle_sort_key(hotkey)
-            if self.pressedkey == ord(hotkey) and 'handler' in self._hotkeys[hotkey]:
-                action = getattr(self, self._hotkeys[hotkey]['handler'])
-                action()
-
-        # Other actions with key > 255 (ord will not work) and/or additional test...
+    def catch_other_actions_maybe_return_to_browser(self, return_to_browser):
         if self.pressedkey == ord('e') and not self.args.programs:
             self._handle_process_extended()
         elif self.pressedkey == ord('k') and not self.args.disable_cursor:
@@ -267,6 +271,19 @@ class _GlancesCurses:
             self._handle_quit(return_to_browser)
         elif self.pressedkey == curses.KEY_F5 or self.pressedkey == 18:
             self._handle_refresh()
+
+    def __catch_key(self, return_to_browser=False):
+        # Catch the pressed key
+        self.pressedkey = self.get_key(self.term_window)
+        if self.pressedkey == -1:
+            return self.pressedkey
+
+        # Actions (available in the global hotkey dict)...
+        logger.debug(f"Keypressed (code: {self.pressedkey})")
+        [self.catch_actions_from_hotkey(hotkey) for hotkey in self._hotkeys]
+
+        # Other actions with key > 255 (ord will not work) and/or additional test...
+        self.catch_other_actions_maybe_return_to_browser(return_to_browser)
 
         # Return the key code
         return self.pressedkey
@@ -445,13 +462,15 @@ class _GlancesCurses:
         self.new_line()
         self.line -= 1
         line_width = self.term_window.getmaxyx()[1] - self.column
-        if self.line >= 0:
-            self.term_window.addnstr(
-                self.line,
-                self.column,
-                unicode_message('MEDIUM_LINE', self.args) * line_width,
+        if self.line >= 0 and self.line < self.term_window.getmaxyx()[0]:
+            position = [self.line, self.column]
+            line_color = self.colors_list[color]
+            line_type = curses.ACS_HLINE if not self.args.disable_unicode else unicode_message('MEDIUM_LINE', self.args)
+            self.term_window.hline(
+                *position,
+                line_type,
                 line_width,
-                self.colors_list[color],
+                line_color,
             )
 
     def __get_stat_display(self, stats, layer):
@@ -651,11 +670,10 @@ class _GlancesCurses:
             self.new_column()
             self.display_plugin(stat_display["ip"], display_optional=(self.term_window.getmaxyx()[1] >= 100))
         self.new_column()
-        self.display_plugin(
-            stat_display["uptime"], add_space=-(self.get_stats_display_width(stat_display["cloud"]) != 0)
-        )
+        cloud_width = self.get_stats_display_width(stat_display.get("cloud", 0))
+        self.display_plugin(stat_display["uptime"], add_space=-(cloud_width != 0))
         self.init_column()
-        if self.get_stats_display_width(stat_display["cloud"]) != 0:
+        if cloud_width != 0:
             # Second line (optional)
             self.new_line()
             self.display_plugin(stat_display["cloud"])
@@ -781,16 +799,24 @@ class _GlancesCurses:
 
         # Display right sidebar
         self.new_column()
-        for p in self._right_sidebar:
+        for p in self._right_sidebar():
             if (hasattr(self.args, 'enable_' + p) or hasattr(self.args, 'disable_' + p)) and p in stat_display:
                 self.new_line()
-                if p == 'processlist':
+                if p in ['processlist', 'programlist']:
+                    p_index = self._right_sidebar().index(p) + 1
                     self.display_plugin(
-                        stat_display['processlist'],
+                        stat_display[p],
                         display_optional=(self.term_window.getmaxyx()[1] > 102),
                         display_additional=(not MACOS),
                         max_y=(
-                            self.term_window.getmaxyx()[0] - self.get_stats_display_height(stat_display['alert']) - 2
+                            self.term_window.getmaxyx()[0]
+                            - sum(
+                                [
+                                    self.get_stats_display_height(stat_display[i])
+                                    for i in self._right_sidebar()[p_index:]
+                                ]
+                            )
+                            - 2
                         ),
                     )
                 else:
@@ -854,7 +880,7 @@ class _GlancesCurses:
 
         # Add the message
         for y, m in enumerate(sentence_list):
-            if len(m) > 0:
+            if m:
                 popup.addnstr(2 + y, 2, m, len(m))
 
         if popup_type == 'info':
@@ -894,11 +920,14 @@ class _GlancesCurses:
             return None
 
         if popup_type == 'yesno':
-            # # Create a sub-window for the text field
+            # Create a sub-window for the text field
             sub_pop = popup.derwin(1, 2, len(sentence_list) + 1, len(m) + 2)
             sub_pop.attron(self.colors_list['FILTER'])
             # Init the field with the current value
-            sub_pop.addnstr(0, 0, '', 0)
+            try:
+                sub_pop.addnstr(0, 0, '', 0)
+            except curses.error:
+                pass
             # Display the popup
             popup.refresh()
             sub_pop.refresh()
@@ -912,6 +941,85 @@ class _GlancesCurses:
             return textbox.gather()
 
         return None
+
+    def setup_upper_left_pos(self, plugin_stats):
+        screen_y, screen_x = self.term_window.getmaxyx()
+
+        if plugin_stats['align'] == 'right':
+            # Right align (last column)
+            display_x = screen_x - self.get_stats_display_width(plugin_stats)
+        else:
+            display_x = self.column
+
+        if plugin_stats['align'] == 'bottom':
+            # Bottom (last line)
+            display_y = screen_y - self.get_stats_display_height(plugin_stats)
+        else:
+            display_y = self.line
+
+        return display_y, display_x
+
+    def get_next_x_and_x_max(self, m, x, x_max):
+        # New column
+        # Python 2: we need to decode to get real screen size because
+        # UTF-8 special tree chars occupy several bytes.
+        # Python 3: strings are strings and bytes are bytes, all is
+        # good.
+        try:
+            x += len(u(m['msg']))
+        except UnicodeDecodeError:
+            # Quick and dirty hack for issue #745
+            pass
+        if x > x_max:
+            x_max = x
+
+        return x, x_max
+
+    def display_stats_with_current_size(self, m, y, x):
+        screen_x = self.term_window.getmaxyx()[1]
+        self.term_window.addnstr(
+            y,
+            x,
+            m['msg'],
+            # Do not display outside the screen
+            screen_x - x,
+            self.colors_list[m['decoration']],
+        )
+
+    def display_stats(self, plugin_stats, init, helper):
+        y, x, x_max = init
+        for m in plugin_stats['msgdict']:
+            # New line
+            try:
+                if m['msg'].startswith('\n'):
+                    y, x = helper['goto next, add first col'](y, x)
+                    continue
+            except Exception:
+                # Avoid exception (see issue #1692)
+                pass
+            # Do not display outside the screen
+            if x < 0:
+                continue
+            if helper['x overbound?'](m, x):
+                continue
+            if helper['y overbound?'](y):
+                break
+            # If display_optional = False do not display optional stats
+            if helper['display optional?'](m):
+                continue
+            # If display_additional = False do not display additional stats
+            if helper['display additional?'](m):
+                continue
+            # Is it possible to display the stat with the current screen size
+            # !!! Crash if not try/except... Why ???
+            try:
+                self.display_stats_with_current_size(m, y, x)
+            except Exception:
+                pass
+            else:
+                x, x_max = self.get_next_x_and_x_max(m, x, x_max)
+
+        return y, x, x_max
 
     def display_plugin(self, plugin_stats, display_optional=True, display_additional=True, max_y=65535, add_space=0):
         """Display the plugin_stats on the screen.
@@ -930,76 +1038,22 @@ class _GlancesCurses:
             return 0
 
         # Get the screen size
-        screen_x = self.term_window.getmaxyx()[1]
-        screen_y = self.term_window.getmaxyx()[0]
+        screen_y, screen_x = self.term_window.getmaxyx()
 
         # Set the upper/left position of the message
-        if plugin_stats['align'] == 'right':
-            # Right align (last column)
-            display_x = screen_x - self.get_stats_display_width(plugin_stats)
-        else:
-            display_x = self.column
-        if plugin_stats['align'] == 'bottom':
-            # Bottom (last line)
-            display_y = screen_y - self.get_stats_display_height(plugin_stats)
-        else:
-            display_y = self.line
+        display_y, display_x = self.setup_upper_left_pos(plugin_stats)
+
+        helper = {
+            'goto next, add first col': lambda y, x: (y + 1, display_x),
+            'x overbound?': lambda m, x: not m['splittable'] and (x + len(m['msg']) > screen_x),
+            'y overbound?': lambda y: y < 0 or (y + 1 > screen_y) or (y > max_y),
+            'display optional?': lambda m: not display_optional and m['optional'],
+            'display additional?': lambda m: not display_additional and m['additional'],
+        }
 
         # Display
-        x = display_x
-        x_max = x
-        y = display_y
-        for m in plugin_stats['msgdict']:
-            # New line
-            try:
-                if m['msg'].startswith('\n'):
-                    # Go to the next line
-                    y += 1
-                    # Return to the first column
-                    x = display_x
-                    continue
-            except Exception:
-                # Avoid exception (see issue #1692)
-                pass
-            # Do not display outside the screen
-            if x < 0:
-                continue
-            if not m['splittable'] and (x + len(m['msg']) > screen_x):
-                continue
-            if y < 0 or (y + 1 > screen_y) or (y > max_y):
-                break
-            # If display_optional = False do not display optional stats
-            if not display_optional and m['optional']:
-                continue
-            # If display_additional = False do not display additional stats
-            if not display_additional and m['additional']:
-                continue
-            # Is it possible to display the stat with the current screen size
-            # !!! Crash if not try/except... Why ???
-            try:
-                self.term_window.addnstr(
-                    y,
-                    x,
-                    m['msg'],
-                    # Do not display outside the screen
-                    screen_x - x,
-                    self.colors_list[m['decoration']],
-                )
-            except Exception:
-                pass
-            else:
-                # New column
-                # Python 2: we need to decode to get real screen size because
-                # UTF-8 special tree chars occupy several bytes.
-                # Python 3: strings are strings and bytes are bytes, all is
-                # good.
-                try:
-                    x += len(u(m['msg']))
-                except UnicodeDecodeError:
-                    # Quick and dirty hack for issue #745
-                    pass
-                if x > x_max:
-                    x_max = x
+        init = display_y, display_x, display_x
+        y, x, x_max = self.display_stats(plugin_stats, init, helper)
 
         # Compute the next Glances column/line position
         self.next_column = max(self.next_column, x_max + self.space_between_column)
@@ -1176,128 +1230,3 @@ class GlancesTextboxYesNo(Textbox):
 
     def do_command(self, ch):
         return super().do_command(ch)
-
-
-def build_colors_list(args):
-    """Init the Curses color layout."""
-    # Set curses options
-    try:
-        if hasattr(curses, 'start_color'):
-            curses.start_color()
-            logger.debug(f'Curses interface compatible with {curses.COLORS} colors')
-        if hasattr(curses, 'use_default_colors'):
-            curses.use_default_colors()
-    except Exception as e:
-        logger.warning(f'Error initializing terminal color ({e})')
-
-    # Init colors
-    if args.disable_bold:
-        A_BOLD = 0
-        args.disable_bg = True
-    else:
-        A_BOLD = curses.A_BOLD
-
-    title_color = A_BOLD
-
-    if curses.has_colors():
-        # The screen is compatible with a colored design
-        # ex: export TERM=xterm-256color
-        #     export TERM=xterm-color
-
-        curses.init_pair(1, -1, -1)
-        if args.disable_bg:
-            curses.init_pair(2, curses.COLOR_RED, -1)
-            curses.init_pair(3, curses.COLOR_GREEN, -1)
-            curses.init_pair(5, curses.COLOR_MAGENTA, -1)
-        else:
-            curses.init_pair(2, -1, curses.COLOR_RED)
-            curses.init_pair(3, -1, curses.COLOR_GREEN)
-            curses.init_pair(5, -1, curses.COLOR_MAGENTA)
-        curses.init_pair(4, curses.COLOR_BLUE, -1)
-        curses.init_pair(6, curses.COLOR_RED, -1)
-        curses.init_pair(7, curses.COLOR_GREEN, -1)
-        curses.init_pair(8, curses.COLOR_MAGENTA, -1)
-
-        # Colors text styles
-        no_color = curses.color_pair(1)
-        default_color = curses.color_pair(3) | A_BOLD
-        nice_color = curses.color_pair(8)
-        cpu_time_color = curses.color_pair(8)
-        ifCAREFUL_color = curses.color_pair(4) | A_BOLD
-        ifWARNING_color = curses.color_pair(5) | A_BOLD
-        ifCRITICAL_color = curses.color_pair(2) | A_BOLD
-        default_color2 = curses.color_pair(7)
-        ifCAREFUL_color2 = curses.color_pair(4)
-        ifWARNING_color2 = curses.color_pair(8) | A_BOLD
-        ifCRITICAL_color2 = curses.color_pair(6) | A_BOLD
-        ifINFO_color = curses.color_pair(4)
-        filter_color = A_BOLD
-        selected_color = A_BOLD
-        separator = curses.color_pair(1)
-
-        if curses.COLORS > 8:
-            # ex: export TERM=xterm-256color
-            colors_list = [curses.COLOR_CYAN, curses.COLOR_YELLOW]
-            for i in range(0, 3):
-                try:
-                    curses.init_pair(i + 9, colors_list[i], -1)
-                except Exception:
-                    curses.init_pair(i + 9, -1, -1)
-            filter_color = curses.color_pair(9) | A_BOLD
-            selected_color = curses.color_pair(10) | A_BOLD
-            # Define separator line style
-            try:
-                curses.init_color(11, 500, 500, 500)
-                curses.init_pair(11, curses.COLOR_BLACK, -1)
-                separator = curses.color_pair(11)
-            except Exception:
-                # Catch exception in TMUX
-                pass
-    else:
-        # The screen is NOT compatible with a colored design
-        # switch to B&W text styles
-        # ex: export TERM=xterm-mono
-        no_color = -1
-        default_color = -1
-        nice_color = A_BOLD
-        cpu_time_color = A_BOLD
-        ifCAREFUL_color = A_BOLD
-        ifWARNING_color = curses.A_UNDERLINE
-        ifCRITICAL_color = curses.A_REVERSE
-        default_color2 = -1
-        ifCAREFUL_color2 = A_BOLD
-        ifWARNING_color2 = curses.A_UNDERLINE
-        ifCRITICAL_color2 = curses.A_REVERSE
-        ifINFO_color = A_BOLD
-        filter_color = A_BOLD
-        selected_color = A_BOLD
-        separator = -1
-
-    # Define the colors list (hash table) for stats
-    return {
-        'DEFAULT': no_color,
-        'UNDERLINE': curses.A_UNDERLINE,
-        'BOLD': A_BOLD,
-        'SORT': curses.A_UNDERLINE | A_BOLD,
-        'OK': default_color2,
-        'MAX': default_color2 | A_BOLD,
-        'FILTER': filter_color,
-        'TITLE': title_color,
-        'PROCESS': default_color2,
-        'PROCESS_SELECTED': default_color2 | curses.A_UNDERLINE,
-        'STATUS': default_color2,
-        'NICE': nice_color,
-        'CPU_TIME': cpu_time_color,
-        'CAREFUL': ifCAREFUL_color2,
-        'WARNING': ifWARNING_color2,
-        'CRITICAL': ifCRITICAL_color2,
-        'OK_LOG': default_color,
-        'CAREFUL_LOG': ifCAREFUL_color,
-        'WARNING_LOG': ifWARNING_color,
-        'CRITICAL_LOG': ifCRITICAL_color,
-        'PASSWORD': curses.A_PROTECT,
-        'SELECTED': selected_color,
-        'INFO': ifINFO_color,
-        'ERROR': selected_color,
-        'SEPARATOR': separator,
-    }

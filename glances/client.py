@@ -11,17 +11,20 @@
 import sys
 import time
 
-import orjson
+from defusedxml import xmlrpc
 
 from glances import __version__
-from glances.globals import Fault, ProtocolError, ServerProxy, Transport
+from glances.globals import json_loads
 from glances.logger import logger
 from glances.outputs.glances_curses import GlancesCursesClient
 from glances.stats_client import GlancesStatsClient
 from glances.timer import Counter
 
+# Correct issue #1025 by monkey path the xmlrpc lib
+xmlrpc.monkey_patch()
 
-class GlancesClientTransport(Transport):
+
+class GlancesClientTransport(xmlrpc.xmlrpc_client.Transport):
     """This class overwrite the default XML-RPC transport and manage timeout."""
 
     def set_timeout(self, timeout):
@@ -59,7 +62,7 @@ class GlancesClient:
         # Configure the server timeout
         transport.set_timeout(timeout)
         try:
-            self.client = ServerProxy(self.uri, transport=transport)
+            self.client = xmlrpc.xmlrpc_client.ServerProxy(self.uri, transport=transport)
         except Exception as e:
             self.log_and_exit(f"Client couldn't create socket {self.uri}: {e}")
 
@@ -103,7 +106,7 @@ class GlancesClient:
                 print(fall_back_msg)
             else:
                 logger.info(fall_back_msg)
-        except ProtocolError as err:
+        except xmlrpc.xmlrpc_client.ProtocolError as err:
             # Other errors
             msg = f"Connection to server {self.uri} failed"
             if err.errcode == 401:
@@ -118,7 +121,7 @@ class GlancesClient:
             if __version__.split('.')[0] == client_version.split('.')[0]:
                 # Init stats
                 self.stats = GlancesStatsClient(config=self.config, args=self.args)
-                self.stats.set_plugins(orjson.loads(self.client.getAllPlugins()))
+                self.stats.set_plugins(json_loads(self.client.getAllPlugins()))
                 logger.debug(f"Client version: {__version__} / Server version: {client_version}")
             else:
                 self.log_and_exit(
@@ -195,11 +198,11 @@ class GlancesClient:
         """
         # Update the stats
         try:
-            server_stats = orjson.loads(self.client.getAll())
+            server_stats = json_loads(self.client.getAll())
         except OSError:
             # Client cannot get server stats
             return "Disconnected"
-        except Fault:
+        except xmlrpc.xmlrpc_client.Fault:
             # Client cannot get server stats (issue #375)
             return "Disconnected"
         else:

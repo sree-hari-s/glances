@@ -1,24 +1,30 @@
 <template>
     <section id="memswap" class="plugin">
-        <div class="table">
-            <div class="table-row">
-                <div class="table-cell text-left title">SWAP</div>
-                <div class="table-cell" :class="getDecoration('percent')">{{ percent }}%</div>
-            </div>
-            <div class="table-row">
-                <div class="table-cell text-left">total:</div>
-                <div class="table-cell">{{ $filters.bytes(total) }}</div>
-            </div>
-            <div class="table-row">
-                <div class="table-cell text-left">used:</div>
-                <div class="table-cell" :class="getDecoration('used')">
-                    {{ $filters.bytes(used) }}
-                </div>
-            </div>
-            <div class="table-row">
-                <div class="table-cell text-left">free:</div>
-                <div class="table-cell">{{ $filters.bytes(free) }}</div>
-            </div>
+        <div class="table-responsive">
+            <table class="table table-sm table-borderless">
+                <thead>
+                    <tr>
+                        <th scope="col">SWAP</th>
+                        <td scope="col" class="text-end" :class="getDecoration('percent')"><span>{{ percent }}%</span>
+                        </td>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td scope="row">total:</td>
+                        <td class="text-end"><span>{{ $filters.bytes(total) }}</span></td>
+                    </tr>
+                    <tr>
+                        <td scope="row">used:</td>
+                        <td class="text-end" :class="getDecoration('used')"><span>{{ $filters.bytes(used, 2) }}</span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td scope="row">free:</td>
+                        <td class="text-end"><span>{{ $filters.bytes(free, 2) }}</span></td>
+                    </tr>
+                </tbody>
+            </table>
         </div>
     </section>
 </template>

@@ -16,6 +16,7 @@
 import base64
 import errno
 import functools
+import importlib
 import os
 import platform
 import queue
@@ -23,22 +24,41 @@ import re
 import subprocess
 import sys
 import weakref
+from collections import OrderedDict
 from configparser import ConfigParser, NoOptionError, NoSectionError
 from datetime import datetime
 from operator import itemgetter, methodcaller
 from statistics import mean
+from typing import Any, Union
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
-from xmlrpc.client import Fault, ProtocolError, Server, ServerProxy, Transport
-from xmlrpc.server import SimpleXMLRPCRequestHandler, SimpleXMLRPCServer
 
-import orjson
+# Prefer faster libs for JSON (de)serialization
+# Preference Order: orjson > ujson > json (builtin)
+try:
+    import orjson as json
 
-# Correct issue #1025 by monkey path the xmlrpc lib
-from defusedxml.xmlrpc import monkey_patch
+    json.dumps = functools.partial(json.dumps, option=json.OPT_NON_STR_KEYS)
+except ImportError:
+    # Need to log info but importing logger will cause cyclic imports
+    pass
 
-monkey_patch()
+if 'json' not in globals():
+    try:
+        # Note: ujson is not officially supported
+        # Available as a fallback to allow orjson's unsupported platforms to use a faster serialization lib
+        import ujson as json
+    except ImportError:
+        import json
+
+    # To allow ujson & json dumps to serialize datetime
+    def _json_default(v: Any) -> Any:
+        if isinstance(v, datetime):
+            return v.isoformat()
+        return v
+
+    json.dumps = functools.partial(json.dumps, default=_json_default)
 
 ##############
 # GLOBALS VARS
@@ -89,7 +109,7 @@ def printandflush(string):
 
 def to_ascii(s):
     """Convert the bytes string to a ASCII string
-    Usefull to remove accent (diacritics)"""
+    Useful to remove accent (diacritics)"""
     if isinstance(s, binary_type):
         return s.decode()
     return s.encode('ascii', 'ignore').decode()
@@ -153,7 +173,7 @@ def subsample(data, sampling):
 
     Data should be a list of numerical itervalues
 
-    Return a subsampled list of sampling lenght
+    Return a subsampled list of sampling length
     """
     if len(data) <= sampling:
         return data
@@ -161,7 +181,7 @@ def subsample(data, sampling):
     return [mean(data[s * sampling_length : (s + 1) * sampling_length]) for s in range(0, sampling)]
 
 
-def time_serie_subsample(data, sampling):
+def time_series_subsample(data, sampling):
     """Compute a simple mean subsampling.
 
     Data should be a list of set (time, value)
@@ -216,13 +236,13 @@ def key_exist_value_not_none(k, d):
     return k in d and d[k] is not None
 
 
-def key_exist_value_not_none_not_v(k, d, value='', lengh=None):
+def key_exist_value_not_none_not_v(k, d, value='', length=None):
     # Return True if:
     # - key k exists
     # - d[k] is not None
     # - d[k] != value
-    # - if lengh is not None and len(d[k]) >= lengh
-    return k in d and d[k] is not None and d[k] != value and (lengh is None or len(d[k]) >= lengh)
+    # - if length is not None and len(d[k]) >= length
+    return k in d and d[k] is not None and d[k] != value and (length is None or len(d[k]) >= length)
 
 
 def disable(class_name, var):
@@ -249,19 +269,50 @@ def safe_makedirs(path):
             raise
 
 
-def pretty_date(time=False):
+def get_time_diffs(ref, now):
+    if isinstance(ref, int):
+        diff = now - datetime.fromtimestamp(ref)
+    elif isinstance(ref, datetime):
+        diff = now - ref
+    elif not ref:
+        diff = 0
+
+    return diff
+
+
+def get_first_true_val(conds):
+    return next(key for key, val in conds.items() if val)
+
+
+def maybe_add_plural(count):
+    return "s" if count > 1 else ""
+
+
+def build_str_when_more_than_seven_days(day_diff, unit):
+    scale = {'week': 7, 'month': 30, 'year': 365}[unit]
+
+    count = day_diff // scale
+
+    return str(count) + " " + unit + maybe_add_plural(count)
+
+
+def pretty_date(ref, now=None):
     """
     Get a datetime object or a int() Epoch timestamp and return a
     pretty string like 'an hour ago', 'Yesterday', '3 months ago',
     'just now', etc
     Source: https://stackoverflow.com/questions/1551382/user-friendly-time-format-in-python
+
+    Refactoring done in commit https://github.com/nicolargo/glances/commit/f6279baacd4cf0b27ca10df6dc01f091ea86a40a
+    break the function. Get back to the old fashion way.
     """
-    now = datetime.now()
-    if isinstance(time, int):
-        diff = now - datetime.fromtimestamp(time)
-    elif isinstance(time, datetime):
-        diff = now - time
-    elif not time:
+    if not now:
+        now = datetime.now()
+    if isinstance(ref, int):
+        diff = now - datetime.fromtimestamp(ref)
+    elif isinstance(ref, datetime):
+        diff = now - ref
+    elif not ref:
         diff = 0
     second_diff = diff.seconds
     day_diff = diff.days
@@ -285,12 +336,15 @@ def pretty_date(time=False):
     if day_diff == 1:
         return "yesterday"
     if day_diff < 7:
-        return str(day_diff) + " days"
+        return str(day_diff) + " days" if day_diff > 1 else "a day"
     if day_diff < 31:
-        return str(day_diff // 7) + " weeks"
+        week = day_diff // 7
+        return str(week) + " weeks" if week > 1 else "a week"
     if day_diff < 365:
-        return str(day_diff // 30) + " months"
-    return str(day_diff // 365) + " years"
+        month = day_diff // 30
+        return str(month) + " months" if month > 1 else "a month"
+    year = day_diff // 365
+    return str(year) + " years" if year > 1 else "an year"
 
 
 def urlopen_auth(url, username, password):
@@ -298,20 +352,27 @@ def urlopen_auth(url, username, password):
     return urlopen(
         Request(
             url,
-            headers={'Authorization': 'Basic ' + base64.b64encode((f'{username}:{password}').encode()).decode()},
+            headers={'Authorization': 'Basic ' + base64.b64encode(f'{username}:{password}'.encode()).decode()},
         )
     )
 
 
-def json_dumps(data):
+def json_dumps(data) -> bytes:
     """Return the object data in a JSON format.
 
     Manage the issue #815 for Windows OS with UnicodeDecodeError catching.
     """
     try:
-        return orjson.dumps(data)
+        res = json.dumps(data)
     except UnicodeDecodeError:
-        return orjson.dumps(data, ensure_ascii=False)
+        res = json.dumps(data, ensure_ascii=False)
+    # ujson & json libs return strings, but our contract expects bytes
+    return b(res)
+
+
+def json_loads(data: Union[str, bytes, bytearray]) -> Union[dict, list]:
+    """Load a JSON buffer into memory as a Python object"""
+    return json.loads(data)
 
 
 def dictlist(data, item):
@@ -425,12 +486,12 @@ def weak_lru_cache(maxsize=128, typed=False):
 
 
 def namedtuple_to_dict(data):
-    """Convert a namedtuple to a dict, using the _asdict() method embeded in PsUtil stats."""
+    """Convert a namedtuple to a dict, using the _asdict() method embedded in PsUtil stats."""
     return {k: (v._asdict() if hasattr(v, '_asdict') else v) for k, v in data.items()}
 
 
 def list_of_namedtuple_to_list_of_dict(data):
-    """Convert a list of namedtuples to a dict, using the _asdict() method embeded in PsUtil stats."""
+    """Convert a list of namedtuples to a dict, using the _asdict() method embedded in PsUtil stats."""
     return [namedtuple_to_dict(d) for d in data]
 
 

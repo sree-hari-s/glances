@@ -1,17 +1,28 @@
 <template>
-    <section id="amps" class="plugin">
-        <div class="table">
+    <section id="amps" class="plugin" v-if="hasAmps">
+        <table class="table table-sm table-borderless">
+            <tbody>
+                <tr v-for="(process, processId) in processes" :key="processId">
+                    <td :class="getNameDecoration(process)">{{ process.name }}</td>
+                    <td v-if="process.regex">{{ process.count }}</td>
+                    <td class="process-result" v-html="$filters.nl2br(process.result)"></td>
+                </tr>
+            </tbody>
+        </table>
+
+        <!-- <div class="table">
             <div class="table-row" v-for="(process, processId) in processes" :key="processId">
-                <div class="table-cell text-left" :class="getNameDecoration(process)">
+                <div class="table-cell text-start" :class="getNameDecoration(process)">
                     {{ process.name }}
                 </div>
-                <div class="table-cell text-left" v-if="process.regex">{{ process.count }}</div>
+                <div class="table-cell text-start" v-if="process.regex">{{ process.count }}</div>
                 <div
-                    class="table-cell text-left process-result"
+                    class="table-cell text-start process-result"
                     v-html="$filters.nl2br(process.result)"
                 ></div>
             </div>
-        </div>
+        </div> -->
+
     </section>
 </template>
 
@@ -28,6 +39,9 @@ export default {
         },
         processes() {
             return this.stats.filter((process) => process.result !== null);
+        },
+        hasAmps() {
+            return this.processes.length > 0;
         }
     },
     methods: {

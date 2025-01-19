@@ -98,7 +98,7 @@ class GlancesPluginModel:
             logger.debug(f'Load section {self.plugin_name} in Glances configuration file')
             self.load_limits(config=config)
 
-        # Init the alias (dictionnary)
+        # Init the alias (dictionary)
         self.alias = self.read_alias()
 
         # Init the actions
@@ -110,6 +110,9 @@ class GlancesPluginModel:
         # Hide stats if all the hide_zero_fields has never been != 0
         # Default is False, always display stats
         self.hide_zero = False
+        # The threshold needed to display a value if hide_zero is true.
+        # Only hide a value if it is less than hide_threshold_bytes.
+        self.hide_threshold_bytes = 0
         self.hide_zero_fields = []
 
         # Set the initial refresh time to display stats the first time
@@ -390,6 +393,13 @@ class GlancesPluginModel:
         """
         return dictlist(self.get_raw(), item)
 
+    def get_raw_stats_key(self, item, key):
+        """Return the stats object for a specific item in RAW format.
+
+        Stats should be a list of dict (processlist, network...)
+        """
+        return {item: [i for i in self.get_raw() if 'key' in i and i[i['key']] == key][0].get(item)}
+
     def get_stats_item(self, item):
         """Return the stats object for a specific item in JSON format.
 
@@ -430,46 +440,6 @@ class GlancesPluginModel:
             return default
         return self.fields_description[item].get(key, default)
 
-    def update_views_hidden(self):
-        """Update the hidden views
-
-        If the self.hide_zero is set then update the hidden field of the view
-        It will check if all fields values are already be different from 0
-        In this case, the hidden field is set to True
-
-        Note: This function should be called by plugin (in the update_views method)
-
-        Example (for network plugin):
-        __Init__
-            self.hide_zero_fields = ['rx', 'tx']
-        Update views
-            ...
-            self.update_views_hidden()
-        """
-        if not self.hide_zero:
-            return False
-        if isinstance(self.get_raw(), list) and self.get_raw() is not None and self.get_key() is not None:
-            # Stats are stored in a list of dict (ex: NETWORK, FS...)
-            for i in self.get_raw():
-                if any(i[f] for f in self.hide_zero_fields):
-                    for f in self.hide_zero_fields:
-                        self.views[i[self.get_key()]][f]['_zero'] = self.views[i[self.get_key()]][f]['hidden']
-                for f in self.hide_zero_fields:
-                    self.views[i[self.get_key()]][f]['hidden'] = self.views[i[self.get_key()]][f]['_zero'] and i[f] == 0
-        elif isinstance(self.get_raw(), dict) and self.get_raw() is not None:
-            #
-            # Warning: This code has never been tested because
-            # no plugin with dict instance use the hidden function...
-            #
-            # Stats are stored in a dict (ex: CPU, LOAD...)
-            for key in listkeys(self.get_raw()):
-                if any(self.get_raw()[f] for f in self.hide_zero_fields):
-                    for f in self.hide_zero_fields:
-                        self.views[f]['_zero'] = self.views[f]['hidden']
-                for f in self.hide_zero_fields:
-                    self.views[f]['hidden'] = self.views['_zero'] and self.views[f] == 0
-        return True
-
     def update_views(self):
         """Update the stats views.
 
@@ -480,43 +450,56 @@ class GlancesPluginModel:
                 'optional': False,        >>> Is the stat optional
                 'additional': False,      >>> Is the stat provide additional information
                 'splittable': False,      >>> Is the stat can be cut (like process lon name)
-                'hidden': False,          >>> Is the stats should be hidden in the UI
-                '_zero': True}            >>> For internal purpose only
+                'hidden': False}          >>> Is the stats should be hidden in the UI
         """
         ret = {}
 
         if isinstance(self.get_raw(), list) and self.get_raw() is not None and self.get_key() is not None:
             # Stats are stored in a list of dict (ex: DISKIO, NETWORK, FS...)
             for i in self.get_raw():
-                ret[i[self.get_key()]] = {}
-                for key in listkeys(i):
+                key = i[self.get_key()]
+                ret[key] = {}
+                for field in listkeys(i):
                     value = {
                         'decoration': 'DEFAULT',
                         'optional': False,
                         'additional': False,
                         'splittable': False,
-                        'hidden': False,
-                        '_zero': (
-                            self.views[i[self.get_key()]][key]['_zero']
-                            if i[self.get_key()] in self.views
-                            and key in self.views[i[self.get_key()]]
-                            and 'zero' in self.views[i[self.get_key()]][key]
-                            else True
-                        ),
                     }
-                    ret[i[self.get_key()]][key] = value
+                    # Manage the hidden feature
+                    # Allow to automatically hide fields when values is never different than 0
+                    # Refactoring done for #2929
+                    if not self.hide_zero:
+                        value['hidden'] = False
+                    elif key in self.views and field in self.views[key] and 'hidden' in self.views[key][field]:
+                        value['hidden'] = self.views[key][field]['hidden']
+                        if field in self.hide_zero_fields and i[field] > self.hide_threshold_bytes:
+                            value['hidden'] = False
+                    else:
+                        value['hidden'] = field in self.hide_zero_fields
+                    ret[key][field] = value
         elif isinstance(self.get_raw(), dict) and self.get_raw() is not None:
             # Stats are stored in a dict (ex: CPU, LOAD...)
-            for key in listkeys(self.get_raw()):
+            for field in listkeys(self.get_raw()):
                 value = {
                     'decoration': 'DEFAULT',
                     'optional': False,
                     'additional': False,
                     'splittable': False,
                     'hidden': False,
-                    '_zero': self.views[key]['_zero'] if key in self.views and '_zero' in self.views[key] else True,
                 }
-                ret[key] = value
+                # Manage the hidden feature
+                # Allow to automatically hide fields when values is never different than 0
+                # Refactoring done for #2929
+                if not self.hide_zero:
+                    value['hidden'] = False
+                elif field in self.views and 'hidden' in self.views[field]:
+                    value['hidden'] = self.views[field]['hidden']
+                    if field in self.hide_zero_fields and self.get_raw()[field] >= self.hide_threshold_bytes:
+                        value['hidden'] = False
+                else:
+                    value['hidden'] = field in self.hide_zero_fields
+                ret[field] = value
 
         self.views = ret
 
@@ -544,7 +527,7 @@ class GlancesPluginModel:
         else:
             item_views = self.views[item]
 
-        if key is None:
+        if key is None or key not in item_views:
             return item_views
         if option is None:
             return item_views[key]
@@ -630,7 +613,7 @@ class GlancesPluginModel:
     def get_stat_name(self, header=""):
         """Return the stat name with an optional header"""
         ret = self.plugin_name
-        if header != "":
+        if header != '':
             ret += '_' + header
         return ret
 
@@ -679,32 +662,26 @@ class GlancesPluginModel:
             return 'DEFAULT'
 
         # Build the stat_name
-        stat_name = self.get_stat_name(header=header)
+        stat_name = self.get_stat_name(header=header).lower()
 
         # Manage limits
         # If is_max is set then default style is set to MAX else default is set to OK
         ret = 'MAX' if is_max else 'OK'
 
         # Iter through limits
-        try:
-            limit = self.get_limit('critical', stat_name=stat_name)
-        except KeyError:
-            try:
-                limit = self.get_limit('warning', stat_name=stat_name)
-            except KeyError:
-                try:
-                    limit = self.get_limit('careful', stat_name=stat_name)
-                except KeyError:
-                    return 'DEFAULT'
-                else:
-                    if value >= limit:
-                        ret = 'CAREFUL'
-            else:
-                if value >= limit:
-                    ret = 'WARNING'
+        critical = self.get_limit('critical', stat_name=stat_name)
+        warning = self.get_limit('warning', stat_name=stat_name)
+        careful = self.get_limit('careful', stat_name=stat_name)
+        if critical and value >= critical:
+            ret = 'CRITICAL'
+        elif warning and value >= warning:
+            ret = 'WARNING'
+        elif careful and value >= careful:
+            ret = 'CAREFUL'
+        elif not careful and not warning and not critical:
+            ret = 'DEFAULT'
         else:
-            if value >= limit:
-                ret = 'CRITICAL'
+            ret = 'OK'
 
         if current < minimum:
             ret = 'CAREFUL'
@@ -744,9 +721,8 @@ class GlancesPluginModel:
     def manage_action(self, stat_name, trigger, header, action_key):
         """Manage the action for the current stat."""
         # Here is a command line for the current trigger ?
-        try:
-            command, repeat = self.get_limit_action(trigger, stat_name=stat_name)
-        except KeyError:
+        command, repeat = self.get_limit_action(trigger, stat_name=stat_name)
+        if not command and not repeat:
             # Reset the trigger
             self.actions.set(stat_name, trigger)
         else:
@@ -779,9 +755,7 @@ class GlancesPluginModel:
 
     def is_limit(self, criticality, stat_name=""):
         """Return true if the criticality limit exist for the given stat_name"""
-        if stat_name == "":
-            return self.plugin_name + '_' + criticality in self._limits
-        return stat_name + '_' + criticality in self._limits
+        return self.get_stat_name(stat_name).lower() + '_' + criticality in self._limits
 
     def get_limit(self, criticality=None, stat_name=""):
         """Return the limit value for the given criticality.
@@ -791,13 +765,13 @@ class GlancesPluginModel:
 
         # Get the limit for stat + header
         # Example: network_wlan0_rx_careful
+        stat_name = stat_name.lower()
         if stat_name + '_' + criticality in self._limits:
             return self._limits[stat_name + '_' + criticality]
         if self.plugin_name + '_' + criticality in self._limits:
             return self._limits[self.plugin_name + '_' + criticality]
 
-        # No key found, the raise an error
-        raise KeyError
+        return None
 
     def get_limit_action(self, criticality, stat_name=""):
         """Return the tuple (action, repeat) for the alert.
@@ -818,8 +792,8 @@ class GlancesPluginModel:
             if r[0] in self._limits:
                 return self._limits[r[0]], r[1]
 
-        # No key found, the raise an error
-        raise KeyError
+        # No key found, return None
+        return None, None
 
     def get_limit_log(self, stat_name, default_action=False):
         """Return the log tag for the alert."""
@@ -931,7 +905,6 @@ class GlancesPluginModel:
                 TITLE: for stat title
                 PROCESS: for process name
                 STATUS: for process status
-                NICE: for process niceness
                 CPU_TIME: for process cpu time
                 OK: Value is OK and non logged
                 OK_LOG: Value is OK and logged
@@ -1190,7 +1163,7 @@ class GlancesPluginModel:
                     # Create a new metadata with the gauge
                     stat['time_since_update'] = self.time_since_last_update
                     stat[field + '_gauge'] = stat[field]
-                    if field + '_gauge' in stat_previous:
+                    if field + '_gauge' in stat_previous and stat[field] and stat_previous[field + '_gauge']:
                         # The stat becomes the delta between the current and the previous value
                         stat[field] = stat[field] - stat_previous[field + '_gauge']
                         # Compute the rate

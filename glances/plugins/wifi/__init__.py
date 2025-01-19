@@ -8,7 +8,7 @@
 
 """Wifi plugin.
 
-Stats are retreived from the /proc/net/wireless file (Linux only):
+Stats are retrieved from the /proc/net/wireless file (Linux only):
 
 # cat /proc/net/wireless
 Inter-| sta-|   Quality        |   Discarded packets               | Missed | WE
@@ -179,7 +179,7 @@ class PluginModel(GlancesPluginModel):
         if max_width:
             if_name_max_width = max_width - 5
         else:
-            # No max_width defined, return an emptu curse message
+            # No max_width defined, return an empty curse message
             logger.debug(f"No max_width defined for the {self.plugin_name} plugin, it will not be displayed.")
             return ret
 

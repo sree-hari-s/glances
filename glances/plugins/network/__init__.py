@@ -86,12 +86,16 @@ class PluginModel(GlancesPluginModel):
             self.hide_zero = config.get_bool_value(self.plugin_name, 'hide_zero', default=False)
         else:
             self.hide_zero = False
-        self.hide_zero_fields = ['bytes_recv', 'bytes_sent']
+        self.hide_zero_fields = ['bytes_recv_rate_per_sec', 'bytes_sent_rate_per_sec']
 
         #  Add support for automatically hiding network interfaces that are down
         # or that don't have any IP addresses #2799
-        self.hide_no_up = config.get_bool_value(self.plugin_name, 'hide_no_up', default=False)
-        self.hide_no_ip = config.get_bool_value(self.plugin_name, 'hide_no_ip', default=False)
+        if config is not None:
+            self.hide_no_up = config.get_bool_value(self.plugin_name, 'hide_no_up', default=False)
+            self.hide_no_ip = config.get_bool_value(self.plugin_name, 'hide_no_ip', default=False)
+        else:
+            self.hide_no_up = False
+            self.hide_no_ip = False
 
         # Force a first update because we need two updates to have the first stat
         self.update()
@@ -196,9 +200,6 @@ class PluginModel(GlancesPluginModel):
         # Call the father's method
         super().update_views()
 
-        # Check if the stats should be hidden
-        self.update_views_hidden()
-
         # Add specifics information
         # Alert
         for i in self.get_raw():
@@ -224,7 +225,9 @@ class PluginModel(GlancesPluginModel):
 
             # then decorates
             self.views[i[self.get_key()]]['bytes_recv']['decoration'] = alert_rx
+            self.views[i[self.get_key()]]['bytes_recv_rate_per_sec']['decoration'] = alert_rx
             self.views[i[self.get_key()]]['bytes_sent']['decoration'] = alert_tx
+            self.views[i[self.get_key()]]['bytes_sent_rate_per_sec']['decoration'] = alert_rx
 
     def msg_curse(self, args=None, max_width=None):
         """Return the dict to display in the curse interface."""
@@ -239,7 +242,7 @@ class PluginModel(GlancesPluginModel):
         if max_width:
             name_max_width = max_width - 12
         else:
-            # No max_width defined, return an emptu curse message
+            # No max_width defined, return an empty curse message
             logger.debug(f"No max_width defined for the {self.plugin_name} plugin, it will not be displayed.")
             return ret
 
@@ -296,11 +299,11 @@ class PluginModel(GlancesPluginModel):
                 to_bit = 8
                 unit = 'b'
 
-            if args.network_cumul and 'bytes_recv' in i:
+            if args.network_cumul and 'bytes_recv' in i and 'bytes_sent' in i:
                 rx = self.auto_unit(int(i['bytes_recv'] * to_bit)) + unit
                 tx = self.auto_unit(int(i['bytes_sent'] * to_bit)) + unit
                 ax = self.auto_unit(int(i['bytes_all'] * to_bit)) + unit
-            elif 'bytes_recv_rate_per_sec' in i:
+            elif 'bytes_recv_rate_per_sec' in i and 'bytes_sent_rate_per_sec' in i:
                 rx = self.auto_unit(int(i['bytes_recv_rate_per_sec'] * to_bit)) + unit
                 tx = self.auto_unit(int(i['bytes_sent_rate_per_sec'] * to_bit)) + unit
                 ax = self.auto_unit(int(i['bytes_all_rate_per_sec'] * to_bit)) + unit
