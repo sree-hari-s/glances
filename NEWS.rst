@@ -1,14 +1,271 @@
 ==============================================================================
                                 Glances ChangeLog
-==============================================================================
+============================================================================
+
+===============
+Version 4.3.0.8
+===============
+
+Bug corrected:
+
+* IP plugin broken with Netifaces2 #3076
+* WebUI if is notresponsive on mobile #3059 (second run)
+
+===============
+Version 4.3.0.7
+===============
+
+Bug corrected:
+
+* WebUI if is notresponsive on mobile #3059
+
+===============
+Version 4.3.0.6
+===============
+
+Bug corrected:
+
+*  Browser mode do not working with the sensors plugin #3069
+*  netifaces is deprecated, use netifaces-plus or netifaces2 #3055
+
+Continuous integration and documentation:
+
+* Update alpine Docker tag to v3.21 #3061
+
+===============
+Version 4.3.0.5
+===============
+
+Bug corrected:
+
+*  WebUI errors in 4.3.0.4 on iPad Air (and Browser with low resolution) #3057
+
+===============
+Version 4.3.0.4
+===============
+
+Continuous integration and documentation:
+
+* Pin Python version in Ubuntu image to 3.12
+
+===============
+Version 4.3.0.3
+===============
+
+Continuous integration and documentation:
+
+* Pin Alpine image to 3.20 (3.21 is not compliant with Netifaces) Related to #3053
+
+===============
+Version 4.3.0.2
+===============
+
+Enhancements:
+
+* Revert "Replace netifaces by netifaces-plus" #3053 because it break build on Alpine Image
+
+===============
+Version 4.3.0.1
+===============
+
+Enhancements:
+
+* Replace netifaces by netifaces-plus #3053
+
+Bug corrected:
+
+* CONTAINERS section missing in 4.3.0 WebUI #3052
+
+===============
+Version 4.3.0
+===============
+
+Enhancements:
+
+* Web Based Glances Central Browser #1121
+* Ability to specify hide or show for smart plugin #2996
+* Thread mode ('j' hotkey) is not taken into accound in the WebUI #3019
+* [WEBUI] Clear old alert messages in the WebUI #3042
+* Raise an (Alert) Event for a group of sensors #3049
+* Allow processlist columns to be selected in config file #1524
+* Allow containers columns to be selected in config file #2722
+* [WebUI] Unecessary space between Processcount and processlist #3032
+* Add comparable NVML_LIB check for Windows #3000
+* Change the default path for graph export to /tmp/glances
+* Improve CCS of WebUI #3024
+
+Bug corrected:
+
+* Thresholds not displayed in the WebUI for the DiskIO plugin #1498
+* FS module alias configuration do not taken into account everytime #3010
+* Unexpected behaviour while running glances in docker with --export influxdb2 #2904
+* Correct issue when key name contains space - Related to #2983
+* Issue with ports plugin (for URL request) #3008
+* Network problem when no bitrate available #3014
+* SyntaxError: f-string: unmatched '[' in server list (on the DEVELOP branch only) #3018
+* Uptime for Docker containers not working #3021
+* WebUI doesn't display valid time for process list #2902
+* Bug In the Web-UI, Timestamps for 'Warning or critical alerts' are showing incorrect month #3023
+* Correct display issue on Containers plugin in WebUI #3028
+
+Continuous integration and documentation:
+
+* Bumped minimal Python version to 3.9 #3005
+* Make the glances/outputs/static/js/uiconfig.json generated automaticaly from the make webui task
+* Update unit-test for Glances Central Browser
+* Add unit-test for new entry point in the API (plugin/item/key)
+* Add a target to start Glances with Htop features
+* Try new build and publish to Pypi CI actions
+
+Thanks to all contributors and bug reporters !
+
+Special thanks to:
+
+* Ariel Otilibili for code quality improvements #2801
+
+===============
+Version 4.2.1
+===============
+
+Enhancements:
+
+* [WEBUI] Came back to default Black Theme / Reduce font size #2993
+* Improve hide_zero option #2958
+
+Bug corrected:
+
+* Possible memory leak #2976
+* Docker/Podman shoud not flood log file with ERROR if containers list can not be retreived #2994
+* Using "-w" option gives error: NameError: name 'Any' is not defined #2992
+* Non blocking error message when Glances starts from a container (alpine-dev image) #2991
+
+Continuous integration and documentation:
+
+* Migrate from setup.py to pyproject.yml #2956
+* Make pyproject.toml's version dynamic #2990
+
+Thanks to all contributors and bug reporters !
+
+Special thanks to:
+
+* @branchvincent for pyproject migration
+
+===============
+Version 4.2.0
+===============
+
+Enhancements:
+
+* [WEBUI] Migration to bootstrap 5 #2914
+* New Ubuntu Multipass VM orchestartor plugin #2252
+* Show only active Disk I/O (and network interface) #2929
+* Make the central client UI configurable (example: GPU status) #1289
+* Please make py-orjson optional: it pulls in dependency on Rust #2930
+* Use defusedxml lib #2979
+* Do not display Unknown information in the cloud plugin #2485
+* Filter Docker containers - #2962
+* Add retain to availability topic in MQTT plugin #2974
+* Make fields labelled in Green easier to see #2882
+
+Bug corrected:
+
+* In TUI, when processes are filtered, column are not aligned #2980
+* Can't kill process. Standalone, Ubuntu 24.04 #2942
+* Internal Server Error #2943
+* Timezone for warning/errors is incorrect #2901
+* Error while initializing the containers plugin ('type' object is not subscriptable) #2922
+* url_prefix do not work in Glances < 4.2.0 - Correct issue with mount #2912
+* Raid plugin breaks with inactive raid0 arrays #2908
+* Crash when terminal is resized #2872
+* Check if server name is not null in the Glances browser - Related to #2861
+* Only display VMs with a running status (in the Vms plugin)
+
+Continuous integration and documentation:
+
+* Incomplete pipx install to allow webui + containers #2955
+* Stick FastAPI version to 0.82.0 or higher (latest is better) - Related to #2926
+* api/4/vms returns a dict, thus breaking make test-restful #2918
+* Migration to Alpine 3.20 and Python 3.12 for Alpine Docker
+
+Improve code quality (thanks to Ariel Otilibili !):
+
+* Merge pull request #2959 from ariel-anieli/plugins-port-alerts
+* Merge pull request #2957 from ariel-anieli/plugin-port-msg
+* Merge pull request #2954 from ariel-anieli/makefile
+* Merge pull request #2941 from ariel-anieli/refactor-alert
+* Merge pull request #2950 from ariel-anieli/revert-commit-01823df9
+* Merge pull request #2932 from ariel-anieli/refactorize-display-plugin
+* Merge pull request #2924 from ariel-anieli/makefile
+* Merge pull request #2919 from ariel-anieli/refactor-plugin-model-msg-curse
+* Merge pull request #2917 from ariel-anieli/makefile
+* Merge pull request #2915 from ariel-anieli/refactor-process-thread
+* Merge pull request #2913 from ariel-anieli/makefile
+* Merge pull request #2910 from ariel-anieli/makefile
+* Merge pull request #2900 from ariel-anieli/issue-2801-catch-key
+* Merge pull request #2907 from ariel-anieli/refactorize-makefile
+* Merge pull request #2891 from ariel-anieli/issue-2801-plugin-msg-curse
+* Merge pull request #2884 from ariel-anieli/issue-2801-plugin-update
+
+Thanks to all contributors and bug reporters !
+
+Special thanks to:
+
+* Ariel Otilibili, he has made an incredible work to improve Glances code quality !
+* RazCrimson, thanks for all your contributions !
+* Bharath Vignesh J K
+* Neveda
+* ey-jo
+
+===============
+Version 4.1.2
+===============
+
+Bug corrected:
+
+* AttributeError: 'CpuPercent' object has no attribute 'cpu_percent' #2859
+
+===============
+Version 4.1.1
+===============
+
+Bug corrected:
+
+* Sensors data is not exported using InfluxDB2 exporter #2856
 
 ===============
 Version 4.1.0
 ===============
 
-Under development, see roadmap here: https://github.com/nicolargo/glances/milestone/68
+Enhancements:
 
-Contributors are welcome !
+* Call process_iter.clear_cache() (PsUtil 6+) when Glances user force a refresh (F5 or CTRL-R) #2753
+* PsUtil 6+ no longer check PID reused #2755
+* Add support for automatically hiding network interfaces that are down or that don't have any IP addresses #2799
+
+Bug corrected:
+
+* API: Network module is disabled but appears in endpoint "all" #2815
+* API is not compatible with requests containing special/encoding char #2820
+* 'j' hot key crashes Glances #2831
+* Raspberry PI - CPU info is not correct #2616
+* Graph export is broken if there is no graph section in Glances configuration file #2839
+* Glances API status check returns Error 405 - Method Not Allowed #2841
+* Rootless podman containers cause glances to fail with KeyError #2827
+* --export-process-filter Filter using complete command #2824
+* Exception when Glances is ran with limited plugin list #2822
+* Disable separator option do not work #2823
+
+Continuous integration and documentation:
+
+* test test_107_fs_plugin_method fails on aarch64-linux #2819
+
+Thanks to all contributors and bug reporters !
+
+Special thanks to:
+
+* Bharath Vignesh J K
+* RazCrimson
+* Vadim Small
 
 ===============
 Version 4.0.8
@@ -183,7 +440,7 @@ Many thinks to the contributors:
 * Christoph Zimmermann
 * RazCrimson
 * Robin Candau
-* Github GPG acces
+* Github GPG access
 * Continuous Integration
 * Georgiy Timchenko
 * turbocrime
@@ -357,7 +614,7 @@ Documentation and CI:
 * Update Makefile with comments
 * Update Python minimal requirement for py3nvlm
 * Update security policy (user can open private issue directly in Github)
-* Add a simple run script. Entry point for IDE debuger
+* Add a simple run script. Entry point for IDE debugger
 
 Cyber security update:
 
@@ -386,7 +643,7 @@ And also a big thanks to @RazCrimson (https://github.com/RazCrimson) for the sup
 Version 3.3.0.4
 ===============
 
-Refactor the Docker images factory, from now, only Alpine image wll be provided.
+Refactor the Docker images factory, from now, only Alpine image will be provided.
 
 The following Docker images (nicolargo/glances) are availables:
 
@@ -434,9 +691,9 @@ Bug corrected:
 * Correct issue with the regexp filter (use fullmatch instead of match)
 * Errors when running Glances as web service #1702
 * Apply alias to Duplicate sensor name #1686
-* Make the hide function in sensors section compliant with lower/upercase #1590
+* Make the hide function in sensors section compliant with lower/uppercase #1590
 * Web UI truncates the days part of CPU time counter of the process list #2108
-* Correct alignement issue with the diskio plugin (Console UI)
+* Correct alignment issue with the diskio plugin (Console UI)
 
 Documentation and CI:
 
@@ -703,7 +960,7 @@ Bugs corrected:
 * Docker containers information missing with Docker 20.10.x #1878
 * Get system sensors temperatures thresholds #1864
 
-Contibutors for this version:
+Contributors for this version:
 
 * Nicolargo
 * Markus Pöschl
@@ -1310,7 +1567,7 @@ Enhancements and new features:
 * Add ZeroMQ exporter (issue #939)
 * Add CouchDB exporter (issue #928)
 * Add hotspot Wifi information (issue #937)
-* Add default interface speed and automatic rate thresolds (issue #718)
+* Add default interface speed and automatic rate thresholds (issue #718)
 * Highlight max stats in the processes list (issue #878)
 * Docker alerts and actions (issue #875)
 * Glances API returns the processes PPID (issue #926)

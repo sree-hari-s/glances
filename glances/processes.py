@@ -18,8 +18,11 @@ from glances.timer import Timer, getTimeSinceLastUpdate
 
 psutil_version_info = tuple([int(num) for num in psutil.__version__.split('.')])
 
+# This constant defines the list of mandatory processes stats. Thoses stats can not be disabled by the user
+mandatory_processes_stats_list = ['pid', 'name']
+
 # This constant defines the list of available processes sort key
-sort_processes_key_list = ['cpu_percent', 'memory_percent', 'username', 'cpu_times', 'io_counters', 'name']
+sort_processes_stats_list = ['cpu_percent', 'memory_percent', 'username', 'cpu_times', 'io_counters', 'name']
 
 # Sort dictionary for human
 sort_for_human = {
@@ -38,7 +41,7 @@ class GlancesProcesses:
 
     def __init__(self, cache_timeout=60):
         """Init the class to collect stats about processes."""
-        # Init the args, coming from the GlancesStandalone class
+        # Init the args, coming from the classes derived from GlancesMode
         # Should be set by the set_args method
         self.args = None
 
@@ -77,6 +80,30 @@ class GlancesProcesses:
         self.disable_extended_tag = False
         self.extended_process = None
 
+        # Tests (and disable if not available) optionals features
+        self._test_grab()
+
+        # Maximum number of processes showed in the UI (None if no limit)
+        self._max_processes = None
+
+        # Process filter
+        self._filter = GlancesFilter()
+
+        # Whether or not to hide kernel threads
+        self.no_kernel_threads = False
+
+        # Store maximums values in a dict
+        # Used in the UI to highlight the maximum value
+        self._max_values_list = ('cpu_percent', 'memory_percent')
+        # { 'cpu_percent': 0.0, 'memory_percent': 0.0 }
+        self._max_values = {}
+        self.reset_max_values()
+
+        # Set the key's list be disabled in order to only display specific attribute in the process list
+        self.disable_stats = []
+
+    def _test_grab(self):
+        """Test somes optionals features"""
         # Test if the system can grab io_counters
         try:
             p = psutil.Process()
@@ -98,22 +125,6 @@ class GlancesProcesses:
         else:
             logger.debug('PsUtil can grab processes gids')
             self.disable_gids = False
-
-        # Maximum number of processes showed in the UI (None if no limit)
-        self._max_processes = None
-
-        # Process filter
-        self._filter = GlancesFilter()
-
-        # Whether or not to hide kernel threads
-        self.no_kernel_threads = False
-
-        # Store maximums values in a dict
-        # Used in the UI to highlight the maximum value
-        self._max_values_list = ('cpu_percent', 'memory_percent')
-        # { 'cpu_percent': 0.0, 'memory_percent': 0.0 }
-        self._max_values = {}
-        self.reset_max_values()
 
     def set_args(self, args):
         """Set args."""
@@ -138,9 +149,12 @@ class GlancesProcesses:
         # For each key in the processcount dict
         # count the number of processes with the same status
         for k in iterkeys(self.processcount):
-            self.processcount[k] = len(list(filter(lambda v: v['status'] is k, plist)))
+            self.processcount[k] = len(list(filter(lambda v: v.get('status', '?') is k, plist)))
         # Compute thread
-        self.processcount['thread'] = sum(i['num_threads'] for i in plist if i['num_threads'] is not None)
+        try:
+            self.processcount['thread'] = sum(i['num_threads'] for i in plist if i['num_threads'] is not None)
+        except KeyError:
+            self.processcount['thread'] = None
         # Compute total
         self.processcount['total'] = len(plist)
 
@@ -210,7 +224,15 @@ class GlancesProcesses:
         """Set the maximum number of processes showed in the UI."""
         self._max_processes = value
 
-    # Process filter
+    @property
+    def disable_stats(self):
+        """Set disable_stats list"""
+        return self._disable_stats
+
+    @disable_stats.setter
+    def disable_stats(self, stats_list):
+        """Set disable_stats list"""
+        self._disable_stats = [i for i in stats_list if i not in mandatory_processes_stats_list]
 
     @property
     def process_filter_input(self):
@@ -293,7 +315,7 @@ class GlancesProcesses:
         # - connections (TCP and UDP)
         # - CPU min/max/mean
 
-        # Set the extended stats list (OS dependant)
+        # Set the extended stats list (OS dependent)
         extended_stats = ['cpu_affinity', 'ionice', 'num_ctx_switches']
         if LINUX:
             # num_fds only available on Unix system (see issue #1351)
@@ -402,6 +424,118 @@ class GlancesProcesses:
             and not self.args.disable_cursor
         )
 
+    def build_process_list(self, sorted_attrs):
+        # Build the processes stats list (it is why we need psutil>=5.3.0) (see issue #2755)
+        processlist = list(
+            filter(
+                lambda p: not (BSD and p.info['name'] == 'idle')
+                and not (WINDOWS and p.info['name'] == 'System Idle Process')
+                and not (MACOS and p.info['name'] == 'kernel_task')
+                and not (self.no_kernel_threads and LINUX and p.info['gids'].real == 0),
+                psutil.process_iter(attrs=sorted_attrs, ad_value=None),
+            )
+        )
+
+        # Only get the info key
+        # PsUtil 6+ no longer check PID reused #2755 so use is_running in the loop
+        # Note: not sure it is realy needed but CPU consumption look the same with or without it
+        processlist = [p.info for p in processlist if p.is_running()]
+
+        # Sort the processes list by the current sort_key
+        return sort_stats(processlist, sorted_by=self.sort_key, reverse=True)
+
+    def get_sorted_attrs(self):
+        defaults = ['cpu_percent', 'cpu_times', 'memory_percent', 'name', 'status', 'num_threads']
+        optional = ['io_counters'] if not self.disable_io_counters else []
+
+        return defaults + optional
+
+    def get_displayed_attr(self):
+        defaults = ['memory_info', 'nice', 'pid']
+        optional = ['gids'] if not self.disable_gids else []
+
+        return defaults + optional
+
+    def get_cached_attrs(self):
+        return ['cmdline', 'username']
+
+    def maybe_add_cached_attrs(self, sorted_attrs, cached_attrs):
+        # Some stats are not sort key
+        # An optimisation can be done be only grabbed displayed_attr
+        # for displayed processes (but only in standalone mode...)
+        sorted_attrs.extend(self.get_displayed_attr())
+        # Some stats are cached (not necessary to be refreshed every time)
+        if self.cache_timer.finished():
+            sorted_attrs += cached_attrs
+            self.cache_timer.set(self.cache_timeout)
+            self.cache_timer.reset()
+            is_cached = False
+        else:
+            is_cached = True
+
+        return is_cached, sorted_attrs
+
+    def get_pid_time_and_status(self, time_since_update, proc):
+        # PID is the key
+        proc['key'] = 'pid'
+
+        # Time since last update (for disk_io rate computation)
+        proc['time_since_update'] = time_since_update
+
+        # Process status (only keep the first char)
+        proc['status'] = str(proc.get('status', '?'))[:1].upper()
+
+        return proc
+
+    def get_io_counters(self, proc):
+        # procstat['io_counters'] is a list:
+        # [read_bytes, write_bytes, read_bytes_old, write_bytes_old, io_tag]
+        # If io_tag = 0 > Access denied or first time (display "?")
+        # If io_tag = 1 > No access denied (display the IO rate)
+        if 'io_counters' in proc and proc['io_counters'] is not None:
+            io_new = [proc['io_counters'][2], proc['io_counters'][3]]
+            # For IO rate computation
+            # Append saved IO r/w bytes
+            try:
+                proc['io_counters'] = io_new + self.io_old[proc['pid']]
+                io_tag = 1
+            except KeyError:
+                proc['io_counters'] = io_new + [0, 0]
+                io_tag = 0
+            # then save the IO r/w bytes
+            self.io_old[proc['pid']] = io_new
+        else:
+            proc['io_counters'] = [0, 0] + [0, 0]
+            io_tag = 0
+        # Append the IO tag (for display)
+        proc['io_counters'] += [io_tag]
+
+        return proc
+
+    def maybe_add_cached_stats(self, is_cached, cached_attrs, proc):
+        if is_cached:
+            # Grab cached values (in case of a new incoming process)
+            if proc['pid'] not in self.processlist_cache:
+                try:
+                    self.processlist_cache[proc['pid']] = psutil.Process(pid=proc['pid']).as_dict(
+                        attrs=cached_attrs, ad_value=None
+                    )
+                except psutil.NoSuchProcess:
+                    pass
+            # Add cached value to current stat
+            try:
+                proc.update(self.processlist_cache[proc['pid']])
+            except KeyError:
+                pass
+        else:
+            # Save values to cache
+            try:
+                self.processlist_cache[proc['pid']] = {cached: proc[cached] for cached in cached_attrs}
+            except KeyError:
+                pass
+
+        return proc
+
     def update(self):
         """Update the processes stats."""
         # Init new processes stats
@@ -416,48 +550,17 @@ class GlancesProcesses:
 
         # Grab standard stats
         #####################
-        sorted_attrs = ['cpu_percent', 'cpu_times', 'memory_percent', 'name', 'status', 'num_threads']
-        displayed_attr = ['memory_info', 'nice', 'pid']
-        # The following attributes are cached and only retreive every self.cache_timeout seconds
+        sorted_attrs = self.get_sorted_attrs()
+
+        # The following attributes are cached and only retrieve every self.cache_timeout seconds
         # Warning: 'name' can not be cached because it is used for filtering
-        cached_attrs = ['cmdline', 'username']
+        cached_attrs = self.get_cached_attrs()
 
-        # Some stats are optional
-        if not self.disable_io_counters:
-            sorted_attrs.append('io_counters')
-        if not self.disable_gids:
-            displayed_attr.append('gids')
-        # Some stats are not sort key
-        # An optimisation can be done be only grabbed displayed_attr
-        # for displayed processes (but only in standalone mode...)
-        sorted_attrs.extend(displayed_attr)
-        # Some stats are cached (not necessary to be refreshed every time)
-        if self.cache_timer.finished():
-            sorted_attrs += cached_attrs
-            self.cache_timer.set(self.cache_timeout)
-            self.cache_timer.reset()
-            is_cached = False
-        else:
-            is_cached = True
+        is_cached, sorted_attrs = self.maybe_add_cached_attrs(sorted_attrs, cached_attrs)
 
-        # Build the processes stats list (it is why we need psutil>=5.3.0)
-        # This is one of the main bottleneck of Glances (see flame graph)
-        # It may be optimized with PsUtil 6+ (see issue #2755)
-        processlist = list(
-            filter(
-                lambda p: not (BSD and p.info['name'] == 'idle')
-                and not (WINDOWS and p.info['name'] == 'System Idle Process')
-                and not (MACOS and p.info['name'] == 'kernel_task')
-                and not (self.no_kernel_threads and LINUX and p.info['gids'].real == 0),
-                psutil.process_iter(attrs=sorted_attrs, ad_value=None),
-            )
-        )
-        # Only get the info key
-        # PsUtil 6+ no longer check PID reused #2755 so use is_running in the loop
-        # Note: not sure it is realy needed but CPU consumption look teh same with or without it
-        processlist = [p.info for p in processlist if p.is_running()]
-        # Sort the processes list by the current sort_key
-        processlist = sort_stats(processlist, sorted_by=self.sort_key, reverse=True)
+        # Remove attributes set by the user in the config file (see #1524)
+        sorted_attrs = [i for i in sorted_attrs if i not in self.disable_stats]
+        processlist = self.build_process_list(sorted_attrs)
 
         # Update the processcount
         self.update_processcount(processlist)
@@ -480,60 +583,16 @@ class GlancesProcesses:
 
             # Meta data
             ###########
-
-            # PID is the key
-            proc['key'] = 'pid'
-
-            # Time since last update (for disk_io rate computation)
-            proc['time_since_update'] = time_since_update
-
-            # Process status (only keep the first char)
-            proc['status'] = str(proc['status'])[:1].upper()
+            proc = self.get_pid_time_and_status(time_since_update, proc)
 
             # Process IO
-            # procstat['io_counters'] is a list:
-            # [read_bytes, write_bytes, read_bytes_old, write_bytes_old, io_tag]
-            # If io_tag = 0 > Access denied or first time (display "?")
-            # If io_tag = 1 > No access denied (display the IO rate)
-            if 'io_counters' in proc and proc['io_counters'] is not None:
-                io_new = [proc['io_counters'][2], proc['io_counters'][3]]
-                # For IO rate computation
-                # Append saved IO r/w bytes
-                try:
-                    proc['io_counters'] = io_new + self.io_old[proc['pid']]
-                    io_tag = 1
-                except KeyError:
-                    proc['io_counters'] = io_new + [0, 0]
-                    io_tag = 0
-                # then save the IO r/w bytes
-                self.io_old[proc['pid']] = io_new
-            else:
-                proc['io_counters'] = [0, 0] + [0, 0]
-                io_tag = 0
-            # Append the IO tag (for display)
-            proc['io_counters'] += [io_tag]
+            proc = self.get_io_counters(proc)
 
             # Manage cached information
-            if is_cached:
-                # Grab cached values (in case of a new incoming process)
-                if proc['pid'] not in self.processlist_cache:
-                    try:
-                        self.processlist_cache[proc['pid']] = psutil.Process(pid=proc['pid']).as_dict(
-                            attrs=cached_attrs, ad_value=None
-                        )
-                    except psutil.NoSuchProcess:
-                        pass
-                # Add cached value to current stat
-                try:
-                    proc.update(self.processlist_cache[proc['pid']])
-                except KeyError:
-                    pass
-            else:
-                # Save values to cache
-                try:
-                    self.processlist_cache[proc['pid']] = {cached: proc[cached] for cached in cached_attrs}
-                except KeyError:
-                    pass
+            proc = self.maybe_add_cached_stats(is_cached, cached_attrs, proc)
+
+        # Remove non running process from the cache (avoid issue #2976)
+        self.remove_non_running_procs(processlist)
 
         # Filter and transform process export list
         self.processlist_export = self.update_export_list(processlist)
@@ -543,15 +602,25 @@ class GlancesProcesses:
 
         # Compute the maximum value for keys in self._max_values_list: CPU, MEM
         # Useful to highlight the processes with maximum values
-        for k in self._max_values_list:
-            values_list = [i[k] for i in processlist if i[k] is not None]
-            if values_list:
-                self.set_max_values(k, max(values_list))
+        self.compute_max_value(processlist)
 
         # Update the stats
         self.processlist = processlist
 
         return self.processlist
+
+    def compute_max_value(self, processlist):
+        for k in [i for i in self._max_values_list if i not in self.disable_stats]:
+            values_list = [i[k] for i in processlist if i[k] is not None]
+            if values_list:
+                self.set_max_values(k, max(values_list))
+
+    def remove_non_running_procs(self, processlist):
+        pids_running = [p['pid'] for p in processlist]
+        pids_cached = list(self.processlist_cache.keys()).copy()
+        for pid in pids_cached:
+            if pid not in pids_running:
+                self.processlist_cache.pop(pid, None)
 
     def update_list(self, processlist):
         """Return the process list after filtering and transformation (namedtuple to dict)."""

@@ -2,8 +2,8 @@
 Glances - An eye on your system
 ===============================
 
-|  |pypi| |test| |contibutors| |quality|
-|  |starts| |docker| |pypistat|
+|  |pypi| |test| |contributors| |quality|
+|  |starts| |docker| |pypistat| |ossrank|
 |  |sponsors| |twitter|
 
 .. |pypi| image:: https://img.shields.io/pypi/v/glances.svg
@@ -21,13 +21,17 @@ Glances - An eye on your system
     :target: https://pepy.tech/project/glances
     :alt: Pypi downloads
 
+.. |ossrank| image:: https://shields.io/endpoint?url=https://ossrank.com/shield/3689
+    :target: https://ossrank.com/p/3689
+    :alt: OSSRank
+
 .. |test| image:: https://github.com/nicolargo/glances/actions/workflows/ci.yml/badge.svg?branch=develop
     :target: https://github.com/nicolargo/glances/actions
     :alt: Linux tests (GitHub Actions)
 
-.. |contibutors| image:: https://img.shields.io/github/contributors/nicolargo/glances
+.. |contributors| image:: https://img.shields.io/github/contributors/nicolargo/glances
     :target: https://github.com/nicolargo/glances/issues?q=is%3Aissue+is%3Aopen+label%3A%22needs+contributor%22
-    :alt: Contibutors
+    :alt: Contributors
 
 .. |quality| image:: https://scrutinizer-ci.com/g/nicolargo/glances/badges/quality-score.png?b=develop
     :target: https://scrutinizer-ci.com/g/nicolargo/glances/?branch=develop
@@ -82,16 +86,20 @@ Any and all contributions are greatly appreciated.
 Requirements
 ============
 
-- ``python>=3.8`` (use Glances 3.4.x for lower Python version)
-- ``psutil`` (better with latest version)
-- ``defusedxml`` (in order to monkey patch xmlrpc)
-- ``packaging`` (for the version comparison)
-- ``orjson`` (an optimized alternative to the standard json module)
+Glances is developed in Python. A minimal Python version 3.9 or higher
+should be installed on your system.
 
 *Note for Python 2 users*
 
-Glances version 4 or higher do not support Python 2 (and Python 3 < 3.8).
+Glances version 4 or higher do not support Python 2 (and Python 3 < 3.9).
 Please uses Glances version 3.4.x if you need Python 2 support.
+
+Dependencies:
+
+- ``psutil`` (better with latest version)
+- ``defusedxml`` (in order to monkey patch xmlrpc)
+- ``packaging`` (for the version comparison)
+- ``windows-curses`` (Windows Curses implementation) [Windows-only]
 
 Optional dependencies:
 
@@ -108,7 +116,7 @@ Optional dependencies:
 - ``influxdb-client``  (for the InfluxDB version 2 export module)
 - ``jinja2`` (for templating, used under the hood by FastAPI)
 - ``kafka-python`` (for the Kafka export module)
-- ``netifaces`` (for the IP plugin)
+- ``netifaces2`` (for the IP plugin)
 - ``nvidia-ml-py`` (for the GPU plugin)
 - ``pycouchdb`` (for the CouchDB export module)
 - ``pika`` (for the RabbitMQ/ActiveMQ export module)
@@ -141,7 +149,7 @@ stable version.
 To install Glances, simply use the ``pip`` command line.
 
 Warning: on modern Linux operating systems, you may have an externally-managed-environment
-error message when you try to use ``pip``. In this case, go to the the PipX section bellow.
+error message when you try to use ``pip``. In this case, go to the the PipX section below.
 
 .. code-block:: console
 
@@ -153,18 +161,37 @@ dependency. For example, on Debian/Ubuntu **the simplest** is
 the *python-dev* package and gcc (*python-devel* on Fedora/CentOS/RHEL).
 For Windows, just install psutil from the binary installation file.
 
-By default, Glances is installed without the Web interface dependencies.
+By default, Glances is installed **without** the Web interface dependencies.
 To install it, use the following command:
 
 .. code-block:: console
 
     pip install --user 'glances[web]'
 
-For a full installation (with all features):
+For a full installation (with all features, see features list bellow):
 
 .. code-block:: console
 
     pip install --user 'glances[all]'
+
+Features list:
+
+- all: install dependencies for all features
+- action: install dependencies for action feature
+- browser: install dependencies for Glances centram browser
+- cloud: install dependencies for cloud plugin
+- containers: install dependencies for container plugin
+- export: install dependencies for all exports modules
+- gpu: install dependencies for GPU plugin
+- graph: install dependencies for graph export
+- ip: install dependencies for IP public option
+- raid: install dependencies for RAID plugin
+- sensors: install dependencies for sensors plugin
+- smart: install dependencies for smart plugin
+- snmp: install dependencies for SNMP
+- sparklines: install dependencies for sparklines option
+- web: install dependencies for Webserver (WebUI) and Web API
+- wifi: install dependencies for Wifi plugin
 
 To upgrade Glances to the latest version:
 
@@ -195,7 +222,7 @@ The glances script will be installed in the ~/.local/bin folder.
 Docker: the cloudy way
 ----------------------
 
-Glances Docker images are availables. You can use it to monitor your
+Glances Docker images are available. You can use it to monitor your
 server and all your containers !
 
 Get the Glances container:
@@ -204,7 +231,7 @@ Get the Glances container:
 
     docker pull nicolargo/glances:latest-full
 
-The following tags are availables:
+The following tags are available:
 
 - *latest-full* for a full Alpine Glances image (latest release) with all dependencies
 - *latest* for a basic Alpine Glances (latest release) version with minimal dependencies (FastAPI and Docker)
@@ -341,9 +368,7 @@ To install Glances from source:
 
 .. code-block:: console
 
-    $ wget https://github.com/nicolargo/glances/archive/vX.Y.tar.gz -O - | tar xz
-    $ cd glances-*
-    # python setup.py install
+    $ pip install https://github.com/nicolargo/glances/archive/vX.Y.tar.gz
 
 *Note*: Python headers are required to install psutil.
 

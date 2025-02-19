@@ -81,18 +81,20 @@ def default_config_dir():
     - Linux, SunOS, *BSD, macOS: /usr/share/doc (as defined in the setup.py files)
     - Windows: %APPDATA%\glances
     """
-    path = []
-    # Add venv path (solve issue #2803)
-    if in_virtualenv():
-        path.append(os.path.join(sys.prefix, 'share', 'doc', 'glances'))
+    paths = []
 
-    # Add others system path
+    # Add system path
     if LINUX or SUNOS or BSD or MACOS:
-        path.append('/usr/share/doc')
+        paths.append(os.path.join(sys.prefix, 'share', 'doc'))
     else:
-        path.append(os.environ.get('APPDATA'))
+        paths.append(os.environ.get('APPDATA'))
 
-    return path
+    # If we are in venv (issue #2803), sys.prefix != sys.base_prefix and we
+    # already added venv path with sys.prefix. Add base_prefix path too
+    if in_virtualenv():
+        paths.append(os.path.join(sys.base_prefix, 'share', 'doc'))
+
+    return [os.path.join(path, 'glances') if path is not None else '' for path in paths]
 
 
 def in_virtualenv():
@@ -261,9 +263,8 @@ class Config:
         # Sensors
         if not self.parser.has_section('sensors'):
             self.parser.add_section('sensors')
-        self.set_default_cwc('sensors', 'temperature_core', cwc=['60', '70', '80'])
         self.set_default_cwc('sensors', 'temperature_hdd', cwc=['45', '52', '60'])
-        self.set_default_cwc('sensors', 'battery', cwc=['80', '90', '95'])
+        self.set_default_cwc('sensors', 'battery', cwc=['70', '80', '90'])
 
         # Process list
         if not self.parser.has_section('processlist'):

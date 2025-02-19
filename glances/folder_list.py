@@ -113,13 +113,13 @@ class FolderList:
     def update(self, key='path'):
         """Update the command result attributed."""
         # Only continue if monitor list is not empty
-        if len(self.__folder_list) == 0:
+        if not self.__folder_list:
             return self.__folder_list
 
         # Iter upon the folder list
         for i in range(len(self.get())):
             # Update folder size
-            if not self.first_grab and not self.timer_folders[i].finished():
+            if not self.first_grab and i in self.timer_folders and not self.timer_folders[i].finished():
                 continue
             # Set the key (see issue #2327)
             self.__folder_list[i]['key'] = key
@@ -132,7 +132,8 @@ class FolderList:
                     )
                 )
             # Reset the timer
-            self.timer_folders[i].reset()
+            if i in self.timer_folders:
+                self.timer_folders[i].reset()
 
         # It is no more the first time...
         self.first_grab = False

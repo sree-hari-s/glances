@@ -48,7 +48,7 @@ class GlancesStandalone:
             self.display_modules_list()
             sys.exit(0)
 
-        # The args is needed to get the selected process in the process list (Curses mode)
+        # Set the args for the glances_processes instance
         glances_processes.set_args(args)
 
         # If process extended stats is disabled by user
@@ -140,12 +140,14 @@ class GlancesStandalone:
         """
         # Update stats
         # Start a counter used to compute the time needed
-        counter = Counter()
+        counter_update = Counter()
         self.stats.update()
-        logger.debug(f'Stats updated duration: {counter.get()} seconds')
+        logger.debug(f'Stats updated duration: {counter_update.get()} seconds')
 
         # Patch for issue1326 to avoid < 0 refresh
-        adapted_refresh = (self.refresh_time - counter.get()) if (self.refresh_time - counter.get()) > 0 else 0
+        adapted_refresh = (
+            (self.refresh_time - counter_update.get()) if (self.refresh_time - counter_update.get()) > 0 else 0
+        )
 
         # Display stats
         # and wait refresh_time - counter
@@ -179,7 +181,7 @@ class GlancesStandalone:
     def serve_forever(self):
         """Wrapper to the serve_forever function."""
         if self.args.stop_after:
-            self.serve_n(self.args.stop_after)
+            self.serve_n(n=self.args.stop_after)
         else:
             while self.__serve_once():
                 pass
@@ -194,7 +196,7 @@ class GlancesStandalone:
         self.stats.end()
 
         # Check Glances version versus PyPI one
-        if self.outdated.is_outdated():
+        if self.outdated.is_outdated() and 'unknown' not in self.outdated.installed_version():
             latest_version = self.outdated.latest_version()
             installed_version = self.outdated.installed_version()
             print(f"You are using Glances version {installed_version}, however version {latest_version} is available.")

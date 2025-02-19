@@ -17,9 +17,9 @@ Location
 You can place your ``glances.conf`` file in the following locations:
 
 ==================== =============================================================
-``Linux``, ``SunOS`` ~/.config/glances/, /etc/glances/, /usr/share/docs/glances/
-``*BSD``             ~/.config/glances/, /usr/local/etc/glances/, /usr/share/docs/glances/
-``macOS``            ~/.config/glances/, ~/Library/Application Support/glances/, /usr/local/etc/glances/, /usr/share/docs/glances/
+``Linux``, ``SunOS`` ~/.config/glances/, /etc/glances/, /usr/share/doc/glances/
+``*BSD``             ~/.config/glances/, /usr/local/etc/glances/, /usr/share/doc/glances/
+``macOS``            ~/.config/glances/, ~/Library/Application Support/glances/, /usr/local/etc/glances/, /usr/share/doc/glances/
 ``Windows``          %APPDATA%\\glances\\glances.conf
 ``All``              + <venv_root_folder>/share/doc/glances/
 ==================== =============================================================
@@ -45,10 +45,10 @@ A first section (called global) is available:
     # It is also possible to overwrite it in each plugin section
     refresh=2
     # Should Glances check if a newer version is available on PyPI ?
-    check_update=false
+    check_update=true
     # History size (maximum number of values)
-    # Default is 28800: 1 day with 1 point every 3 seconds
-    history_size=28800
+    # Default is 1200 values (~1h with the default refresh rate)
+    history_size=1200
     # Set the way Glances should display the date (default is %Y-%m-%d %H:%M:%S %Z)
     #strftime_format="%Y-%m-%d %H:%M:%S %Z"
     # Define external directory for loading additional plugins

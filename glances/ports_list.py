@@ -8,20 +8,13 @@
 
 """Manage the Glances ports list (Ports plugin)."""
 
-from glances.globals import BSD
 from glances.logger import logger
 
-# XXX *BSDs: Segmentation fault (core dumped)
-# -- https://bitbucket.org/al45tair/netifaces/issues/15
-# Also used in the glances_ip plugin
-if not BSD:
-    try:
-        import netifaces
+try:
+    import netifaces
 
-        netifaces_tag = True
-    except ImportError:
-        netifaces_tag = False
-else:
+    netifaces_tag = True
+except ImportError:
     netifaces_tag = False
 
 
@@ -57,7 +50,7 @@ class GlancesPortsList:
             if default_gateway.lower().startswith('true') and netifaces_tag:
                 new_port = {}
                 try:
-                    new_port['host'] = netifaces.gateways()['default'][netifaces.AF_INET][0]
+                    new_port['host'] = netifaces.gateways()[netifaces.AF_INET][0][0]
                 except KeyError:
                     new_port['host'] = None
                 # ICMP

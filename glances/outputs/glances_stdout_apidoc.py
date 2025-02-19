@@ -40,6 +40,12 @@ The Glances Restfull/API server could be ran using the following command line:
 
 It is also ran automatically when Glances is started in Web server mode (-w).
 
+If you want to enable the Glances Central Browser, use:
+
+.. code-block:: bash
+
+    # glances -w --browser --disable-webui
+
 API URL
 -------
 
@@ -71,7 +77,7 @@ WebUI refresh
 -------------
 
 It is possible to change the Web UI refresh rate (default is 2 seconds) using the following option in the URL:
-``http://localhost:61208/glances/?refresh=5``
+``http://localhost:61208/?refresh=5``
 
 """
 
@@ -206,7 +212,7 @@ def print_plugin_item_value(plugin, stat, stat_export):
     if item and value and stat.get_stats_value(item, value):
         print('Get a specific item when field matches the given value::')
         print('')
-        print(f'    # curl {API_URL}/{plugin}/{item}/{value}')
+        print(f'    # curl {API_URL}/{plugin}/{item}/value/{value}')
         print(indent_stat(json.loads(stat.get_stats_value(item, value))))
         print('')
 
@@ -310,6 +316,21 @@ def print_limits(stats):
     print('')
 
 
+def print_plugin_post_events():
+    sub_title = 'POST clear events'
+    print(sub_title)
+    print('-' * len(sub_title))
+    print('')
+    print('Clear all alarms from the list::')
+    print('')
+    print(f'    # curl -H "Content-Type: application/json" -X POST {API_URL}/events/clear/all')
+    print('')
+    print('Clear warning alarms from the list::')
+    print('')
+    print(f'    # curl -H "Content-Type: application/json" -X POST {API_URL}/events/clear/warning')
+    print('')
+
+
 class GlancesStdoutApiDoc:
     """This class manages the fields description display."""
 
@@ -338,6 +359,8 @@ class GlancesStdoutApiDoc:
             stat = stats.get_plugin(plugin)
             print_plugin_stats(plugin, stat)
             print_plugin_description(plugin, stat)
+            if plugin == 'alert':
+                print_plugin_post_events()
 
             stat_export = stat.get_export()
             if stat_export is None or stat_export == [] or stat_export == {}:

@@ -98,7 +98,7 @@ class Export(GlancesExport):
         # issue1871 - Check if a key exist. If a key exist, the value of
         # the key should be used as a tag to identify the measurement.
         keys_list = [k.split('.')[0] for k in columns if k.endswith('.key')]
-        if len(keys_list) == 0:
+        if not keys_list:
             keys_list = [None]
 
         for measurement in keys_list:
@@ -139,8 +139,7 @@ class Export(GlancesExport):
                 if k in fields:
                     tags[k] = str(fields[k])
                     # Remove it from the field list (can not be a field and a tag)
-                    if k in fields:
-                        fields.pop(fields[k])
+                    fields.pop(k)
             # Add the measurement to the list
             ret.append({'measurement': name, 'tags': tags, 'fields': fields})
         return ret
@@ -151,13 +150,13 @@ class Export(GlancesExport):
         if self.prefix is not None:
             name = self.prefix + '.' + name
         # Write input to the InfluxDB database
-        if len(points) == 0:
+        if not points:
             logger.debug(f"Cannot export empty {name} stats to InfluxDB")
         else:
             try:
                 self.client.write_points(self._normalize(name, columns, points), time_precision="s")
             except Exception as e:
-                # Log level set to debug instead of error (see: issue #1561)
-                logger.debug(f"Cannot export {name} stats to InfluxDB ({e})")
+                # Log level set to warning instead of error (see: issue #1561)
+                logger.warning(f"Cannot export {name} stats to InfluxDB ({e})")
             else:
                 logger.debug(f"Export {name} stats to InfluxDB")

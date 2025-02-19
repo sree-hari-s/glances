@@ -18,7 +18,7 @@ from glances import __apiversion__, __version__, psutil_version
 from glances.config import Config
 from glances.globals import WINDOWS, disable, enable
 from glances.logger import LOG_FILENAME, logger
-from glances.processes import sort_processes_key_list
+from glances.processes import sort_processes_stats_list
 
 
 class GlancesMain:
@@ -70,8 +70,11 @@ Examples of use:
   Connect Glances to a Glances server and export stats to a StatsD server (client mode):
     $ glances -c <ip_server> --export statsd
 
-  Start the client browser (browser mode):
+  Start TUI Central Glances Browser:
     $ glances --browser
+
+  Start WebUI Central Glances Browser:
+    $ glances --browser -w
 
   Display stats to stdout (one stat per line, possible to go inside stats using plugin.attribute):
     $ glances --stdout now,cpu.user,mem.used,load
@@ -93,10 +96,68 @@ Examples of use:
 
 """
 
-    def __init__(self):
+    def __init__(self, args_begin_at=1):
         """Manage the command line arguments."""
-        # Read the command line arguments
-        self.args = self.parse_args()
+        self.init_glances(args_begin_at)
+
+    def init_glances(self, args_begin_at):
+        """Main method to init Glances."""
+        # Read the command line arguments or parse the one given in parameter (parser)
+        self.args = self.parse_args(args_begin_at)
+
+        # Load the configuration file, if it exists
+        # This function should be called after the parse_args
+        # because the configuration file path can be defined
+        self.config = Config(self.args.conf_file)
+
+        # Init Glances debug mode
+        self.init_debug(self.args)
+
+        # Plugins Glances refresh rate
+        self.init_refresh_rate(self.args)
+
+        # Manage Plugins disable/enable option
+        self.init_plugins(self.args)
+
+        # Init Glances client/server mode
+        self.init_client_server(self.args)
+
+        # Init UI mode
+        self.init_ui_mode(self.args)
+
+        # Init the generate_graph tag
+        # Should be set to True to generate graphs
+        self.args.generate_graph = False
+
+        # Export is only available in standalone or client mode (issue #614)
+        export_tag = self.args.export is not None and any(self.args.export)
+        if WINDOWS and export_tag:
+            # On Windows, export is possible but only in quiet mode
+            # See issue #1038
+            logger.info("On Windows OS, export disable the Web interface")
+            self.args.quiet = True
+            self.args.webserver = False
+        elif not (self.is_standalone() or self.is_client()) and export_tag:
+            logger.critical("Export is only available in standalone or client mode")
+            sys.exit(2)
+
+        # Filter is only available in standalone mode
+        if not self.args.process_filter and not self.is_standalone():
+            logger.debug("Process filter is only available in standalone mode")
+
+        # Cursor option is only available in standalone mode
+        if not self.args.disable_cursor and not self.is_standalone():
+            logger.debug("Cursor is only available in standalone mode")
+
+        # Let the plugins known the Glances mode
+        self.args.is_standalone = self.is_standalone()
+        self.args.is_client = self.is_client()
+        self.args.is_client_browser = self.is_client_browser()
+        self.args.is_server = self.is_server()
+        self.args.is_webserver = self.is_webserver()
+
+        # Check mode compatibility
+        self.check_mode_compatibility()
 
     def version_msg(self):
         """Return the version message."""
@@ -266,8 +327,8 @@ Examples of use:
         parser.add_argument(
             '--sort-processes',
             dest='sort_processes_key',
-            choices=sort_processes_key_list,
-            help='Sort processes by: {}'.format(', '.join(sort_processes_key_list)),
+            choices=sort_processes_stats_list,
+            help='Sort processes by: {}'.format(', '.join(sort_processes_stats_list)),
         )
         # Display processes list by program name and not by thread
         parser.add_argument(
@@ -318,7 +379,7 @@ Examples of use:
             action='store_true',
             default=False,
             dest='browser',
-            help='start the client browser (list of servers)',
+            help='start TUI Central Glances Browser (use --browser -w to start WebUI Central Glances Browser)',
         )
         parser.add_argument(
             '--disable-autodiscover',
@@ -613,8 +674,8 @@ Examples of use:
         args.network_sum = False
         args.network_cumul = False
 
-        # Processlist id updated in processcount
-        if getattr(args, 'enable_processlist', False):
+        # Processlist is updated in processcount
+        if getattr(args, 'enable_processlist', False) or getattr(args, 'enable_programlist', False):
             enable(args, 'processcount')
 
         # Set a default export_process_filter (with all process) when using the stdout mode
@@ -692,6 +753,7 @@ Examples of use:
             disable(args, 'alert')
             disable(args, 'amps')
             disable(args, 'containers')
+            disable(args, 'vms')
 
         # Manage full quicklook option
         if getattr(args, 'full_quicklook', False):
@@ -720,68 +782,15 @@ Examples of use:
             args.time = 1
             args.disable_history = True
 
-    def parse_args(self):
-        """Parse command line arguments."""
-        args = self.init_args().parse_args()
+        # Unicode => No separator
+        if args.disable_unicode:
+            args.enable_separator = False
 
-        # Load the configuration file, if it exists
-        # This function should be called after the parse_args
-        # because the configuration file path can be defined
-        self.config = Config(args.conf_file)
-
-        # Init Glances debug mode
-        self.init_debug(args)
-
-        # Plugins Glances refresh rate
-        self.init_refresh_rate(args)
-
-        # Manage Plugins disable/enable option
-        self.init_plugins(args)
-
-        # Init Glances client/server mode
-        self.init_client_server(args)
-
-        # Init UI mode
-        self.init_ui_mode(args)
-
-        # Init the generate_graph tag
-        # Should be set to True to generate graphs
-        args.generate_graph = False
-
-        # Control parameter and exit if it is not OK
-        self.args = args
-
-        # Export is only available in standalone or client mode (issue #614)
-        export_tag = self.args.export is not None and any(self.args.export)
-        if WINDOWS and export_tag:
-            # On Windows, export is possible but only in quiet mode
-            # See issue #1038
-            logger.info("On Windows OS, export disable the Web interface")
-            self.args.quiet = True
-            self.args.webserver = False
-        elif not (self.is_standalone() or self.is_client()) and export_tag:
-            logger.critical("Export is only available in standalone or client mode")
-            sys.exit(2)
-
-        # Filter is only available in standalone mode
-        if not args.process_filter and not self.is_standalone():
-            logger.debug("Process filter is only available in standalone mode")
-
-        # Cursor option is only available in standalone mode
-        if not args.disable_cursor and not self.is_standalone():
-            logger.debug("Cursor is only available in standalone mode")
-
-        # Let the plugins known the Glances mode
-        self.args.is_standalone = self.is_standalone()
-        self.args.is_client = self.is_client()
-        self.args.is_client_browser = self.is_client_browser()
-        self.args.is_server = self.is_server()
-        self.args.is_webserver = self.is_webserver()
-
-        # Check mode compatibility
-        self.check_mode_compatibility()
-
-        return args
+    def parse_args(self, args_begin_at):
+        """Parse command line arguments.
+        Glances args start at position args_begin_at.
+        """
+        return self.init_args().parse_args(sys.argv[args_begin_at:])
 
     def check_mode_compatibility(self):
         """Check mode compatibility"""
@@ -806,11 +815,11 @@ Examples of use:
 
     def is_client(self):
         """Return True if Glances is running in client mode."""
-        return (self.args.client or self.args.browser) and not self.args.server
+        return (self.args.client or self.args.browser) and not self.args.server and not self.args.webserver
 
     def is_client_browser(self):
         """Return True if Glances is running in client browser mode."""
-        return self.args.browser and not self.args.server
+        return self.args.browser and not self.args.server and not self.args.webserver
 
     def is_server(self):
         """Return True if Glances is running in server mode."""

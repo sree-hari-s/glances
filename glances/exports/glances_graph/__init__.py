@@ -17,7 +17,7 @@ import pygal.style
 from pygal import DateTimeLine
 
 from glances.exports.export import GlancesExport
-from glances.globals import iteritems, time_serie_subsample
+from glances.globals import iteritems, time_series_subsample
 from glances.logger import logger
 from glances.timer import Timer
 
@@ -33,7 +33,7 @@ class Export(GlancesExport):
         self.export_enable = self.load_conf('graph', options=['path', 'generate_every', 'width', 'height', 'style'])
 
         # Manage options (command line arguments overwrite configuration file)
-        self.path = args.export_graph_path or self.path
+        self.path = self.path or args.export_graph_path
         self.generate_every = int(getattr(self, 'generate_every', 0) or 0)
         self.width = int(getattr(self, 'width', 800) or 800)
         self.height = int(getattr(self, 'height', 600) or 600)
@@ -120,7 +120,7 @@ class Export(GlancesExport):
             x_label_rotation=20,
             x_value_formatter=lambda dt: dt.strftime('%Y/%m/%d %H:%M:%S'),
         )
-        for k, v in iteritems(time_serie_subsample(data, self.width)):
+        for k, v in iteritems(time_series_subsample(data, self.width)):
             chart.add(k, v)
         chart.render_to_file(os.path.join(self.path, title + '.svg'))
         return True
