@@ -237,9 +237,7 @@ class VmsPlugin(GlancesPluginModel):
             # sample and for engines that do not report CPU time.
             self._decorate(name, 'cpu_time_rate_per_sec', vm.get('cpu_time_rate_per_sec'), header='cpu')
             # MEM: as a percentage of that VM's own limit, like containers.
-            self._decorate(
-                name, 'memory_usage', vm.get('memory_usage'), header='mem', maximum=vm.get('memory_total')
-            )
+            self._decorate(name, 'memory_usage', vm.get('memory_usage'), header='mem', maximum=vm.get('memory_total'))
             # LOAD: engines that do not report it leave None (see the field
             # description), and msg_curse already skips the column in that case.
             self._decorate(name, 'load_1min', vm.get('load_1min'), header='load')

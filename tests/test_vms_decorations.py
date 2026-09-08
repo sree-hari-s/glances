@@ -75,7 +75,9 @@ def test_a_column_reaches_critical_from_its_own_threshold(field, quiet, loud):
 def test_memory_is_measured_against_that_vm_own_total():
     # The same byte count is fine in a large VM and critical in a small one, so
     # a test that only moved memory_usage would pass against a fixed maximum.
-    plugin = build([vm(name='big', memory_usage=500, memory_total=10000), vm(name='small', memory_usage=500, memory_total=600)])
+    plugin = build(
+        [vm(name='big', memory_usage=500, memory_total=10000), vm(name='small', memory_usage=500, memory_total=600)]
+    )
     assert decoration(plugin, 'big', 'memory_usage') == 'OK'
     assert decoration(plugin, 'small', 'memory_usage') == 'CRITICAL'
 
@@ -109,7 +111,9 @@ def test_a_per_vm_override_wins_over_the_shared_threshold():
     # get_stat_name builds <plugin>_<action_key>_<header>, so the per-VM key
     # carries the plugin prefix too -- the conf line is `<vmname>_mem_careful`.
     limits = dict(LIMITS, vms_vm1_mem_careful=1, vms_vm1_mem_warning=2, vms_vm1_mem_critical=3)
-    plugin = build([vm(name='vm1', memory_usage=100, memory_total=1000), vm(name='vm2', memory_usage=100, memory_total=1000)])
+    plugin = build(
+        [vm(name='vm1', memory_usage=100, memory_total=1000), vm(name='vm2', memory_usage=100, memory_total=1000)]
+    )
     plugin._limits = limits
     plugin.update_views()
     assert decoration(plugin, 'vm1', 'memory_usage') == 'CRITICAL'
