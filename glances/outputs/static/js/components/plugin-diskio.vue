@@ -96,8 +96,11 @@ export default {
 					const readBytesRate = this.view[disk.name]["read_bytes_rate_per_sec"];
 					const writeBytesRate =
 						this.view[disk.name]["write_bytes_rate_per_sec"];
+					// A disk disappears only when every rate it is judged on has never
+					// moved -- the rule msg_curse applies. Requiring both to be visible
+					// instead hid a disk that has only ever been read, or only written.
 					return (
-						(!readBytesRate || readBytesRate.hidden === false) &&
+						(!readBytesRate || readBytesRate.hidden === false) ||
 						(!writeBytesRate || writeBytesRate.hidden === false)
 					);
 				});
