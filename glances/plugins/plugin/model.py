@@ -1352,9 +1352,17 @@ class GlancesPluginModel:
             key = self.get_key()
             previous_by_key = {s[key]: s for s in stats_previous}
             for stat in stats:
-                old = previous_by_key.get(stat[key])
-                if old is not None:
-                    compute_rate(self, stat, old)
+                # A stat that is new since the previous sample has no gauge to subtract,
+                # so give compute_rate an empty previous instead of skipping it. That
+                # takes the same first-sample path a dict stat takes: record the gauge,
+                # publish a rate of 0, and wait for the next sample to measure a delta.
+                #
+                # Skipping left the raw counter sitting in the delta field and produced
+                # no _gauge, no _rate_per_sec and no time_since_update at all, which is
+                # not the shape the rest of the plugin expects. Interfaces and disks
+                # appear at runtime -- a VPN comes up, a container starts, a disk is
+                # plugged in -- so this is not only a start-up case.
+                compute_rate(self, stat, previous_by_key.get(stat[key], {}))
             return stats
 
         def wrapper(self, *args, **kw):
