@@ -122,7 +122,9 @@ class GlancesPluginModel:
         # Default is False, always display stats
         self.hide_zero = False
         # The threshold needed to display a value if hide_zero is true.
-        # Only hide a value if it is less than hide_threshold_bytes.
+        # A value less than or equal to hide_threshold_bytes stays hidden, so the
+        # default of 0 hides a stat that is exactly zero -- which is what hide_zero
+        # promises.
         self.hide_threshold_bytes = 0
         self.hide_zero_fields = []
 
@@ -646,7 +648,7 @@ class GlancesPluginModel:
             view['hidden'] = self.views[key][field]['hidden']
             if (
                 field in self.hide_zero_fields
-                and self.get_raw_stats_key(item=field, key=key).get(field) >= self.hide_threshold_bytes
+                and self.get_raw_stats_key(item=field, key=key).get(field) > self.hide_threshold_bytes
             ):
                 view['hidden'] = False
             # logger.info(f'{key=} {field=} {view["hidden"]=}')
